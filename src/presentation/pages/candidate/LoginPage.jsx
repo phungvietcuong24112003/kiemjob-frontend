@@ -1,7 +1,10 @@
 import React, { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { login, profileApi } from '../../../infrastructure/api';
+import { login, loginWithGoogle, profileApi } from '../../../infrastructure/api';
+import { triggerGoogleLogin } from '../../../infrastructure/utils/googleAuth';
 import { setCookie } from '../../../infrastructure/utils/cookieUtils';
+import { USER } from '../../../config/storageKeys';
+import { ROLES } from '../../../domain/constants/roles';
 
 /**
  * Trang Đăng Nhập Tài Khoản
@@ -9,7 +12,7 @@ import { setCookie } from '../../../infrastructure/utils/cookieUtils';
  * Các điểm kết nối Backend:
  * - Gọi API: POST /api/auth/login với thông tin { email: identifier, password }.
  * - Nhận JWT token và thông tin tài khoản Account từ máy chủ Spring Boot.
- * - Lưu trữ trạng thái vào localStorage ('kiemjob_user', 'kiemjob_token') và phát sự kiện 'authChange'.
+ * - Lưu trữ trạng thái vào localStorage ('kiemjob_user') và phát sự kiện 'authChange'.
  * - Tự động điều hướng: Ứng viên về trang trước đó (hoặc '/'), Nhà tuyển dụng về trang quản lý ('/recruiter').
  * - Hiển thị thông báo lỗi rõ ràng nếu sai mật khẩu hoặc tài khoản chưa tồn tại.
  */
@@ -22,6 +25,70 @@ export default function LoginPage() {
   const [errorMessage, setErrorMessage] = useState('');
   const navigate = useNavigate();
   const location = useLocation();
+
+  const completeLogin = async (data) => {
+    // Lấy thông tin tài khoản từ response (hỗ trợ cả data.account lẫn data trực tiếp)
+    const account = data.account || data || {};
+
+    // KIỂM TRA ROLE: Cổng đăng nhập này chỉ dành riêng cho Ứng viên!
+    if (account.role === ROLES.RECRUITER) {
+      localStorage.removeItem(USER);
+      throw new Error('Email này thuộc tài khoản Nhà tuyển dụng. Vui lòng chuyển sang cổng dành cho Nhà tuyển dụng.');
+    }
+
+    let user = {
+      id: account.id,
+      email: account.email || identifier.trim(),
+      phone: account.phone || '',
+      role: account.role || ROLES.CANDIDATE,
+      fullName: account.fullName || account.fullname || (account.email ? account.email.split('@')[0] : 'Ứng viên'),
+      fullname: account.fullName || account.fullname || (account.email ? account.email.split('@')[0] : 'Ứng viên'),
+      title: account.headline || '',
+      avatar: account.avatarUrl || ''
+    };
+
+    // Thiết lập cookie xác thực trên trình duyệt
+    setCookie('logged_in', 'true', rememberMe ? 14 : 1);
+
+    // Tải thông tin hồ sơ ứng viên để lấy chính xác họ tên và ảnh đại diện
+    if (user.role === ROLES.CANDIDATE) {
+      try {
+        const candidateResponse = await profileApi.getCandidateProfile();
+        const candidate = candidateResponse?.data ?? candidateResponse;
+        if (candidate?.fullname || candidate?.fullName) {
+          user.fullName = candidate.fullname || candidate.fullName;
+          user.fullname = user.fullName;
+        }
+        if (candidate?.avatarUrl) {
+          user.avatar = candidate.avatarUrl;
+        }
+        if (candidate?.headline) {
+          user.title = candidate.headline;
+        }
+        if (candidate?.phone) {
+          user.phone = candidate.phone;
+        }
+      } catch (profileErr) {
+        console.warn('Không thể tải profile ứng viên lúc đăng nhập:', profileErr);
+      }
+    }
+
+    // Lưu trữ phiên đăng nhập vào trình duyệt
+    localStorage.setItem(USER, JSON.stringify(user));
+
+    // Kích hoạt sự kiện để Header/Navbar cập nhật ngay lập tức
+    window.dispatchEvent(new Event('authChange'));
+
+    // Chuyển hướng: Nếu là Admin, chuyển tới trang Admin
+    if (account.role === ROLES.ADMIN) {
+      navigate('/admin');
+      return;
+    }
+
+    // Chuyển hướng về trang trước đó hoặc trang chủ ứng viên
+    const redirectUrl = location.state?.from || '/';
+    navigate(redirectUrl);
+  };
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -45,74 +112,33 @@ export default function LoginPage() {
         password: password
       });
 
-      // Lấy thông tin tài khoản từ response (hỗ trợ cả data.account lẫn data trực tiếp)
-      const account = data.account || data || {};
-
-      // KIỂM TRA ROLE: Cổng đăng nhập này chỉ dành riêng cho Ứng viên!
-      if (account.role === 'recruiter') {
-        localStorage.removeItem('kiemjob_user');
-        localStorage.removeItem('kiemjob_token');
-        throw new Error('Email này thuộc tài khoản Nhà tuyển dụng. Vui lòng chuyển sang cổng dành cho Nhà tuyển dụng.');
-      }
-
-      let user = {
-        id: account.id,
-        email: account.email || identifier.trim(),
-        phone: account.phone || '',
-        role: account.role || 'candidate',
-        fullName: account.fullName || account.fullname || (account.email ? account.email.split('@')[0] : 'Ứng viên'),
-        fullname: account.fullName || account.fullname || (account.email ? account.email.split('@')[0] : 'Ứng viên'),
-        title: account.headline || '',
-        avatar: account.avatarUrl || ''
-      };
-
-      // Thiết lập cookie xác thực trên trình duyệt
-      setCookie('logged_in', 'true', rememberMe ? 14 : 1);
-      localStorage.removeItem('kiemjob_token');
-
-      // Tải thông tin hồ sơ ứng viên để lấy chính xác họ tên và ảnh đại diện
-      if (user.role === 'candidate') {
-        try {
-          const candidateResponse = await profileApi.getCandidateProfile();
-          const candidate = candidateResponse?.data ?? candidateResponse;
-          if (candidate?.fullname || candidate?.fullName) {
-            user.fullName = candidate.fullname || candidate.fullName;
-            user.fullname = user.fullName;
-          }
-          if (candidate?.avatarUrl) {
-            user.avatar = candidate.avatarUrl;
-          }
-          if (candidate?.headline) {
-            user.title = candidate.headline;
-          }
-          if (candidate?.phone) {
-            user.phone = candidate.phone;
-          }
-        } catch (profileErr) {
-          console.warn('Không thể tải profile ứng viên lúc đăng nhập:', profileErr);
-        }
-      }
-
-      // Lưu trữ phiên đăng nhập vào trình duyệt
-      localStorage.setItem('kiemjob_user', JSON.stringify(user));
-
-      // Kích hoạt sự kiện để Header/Navbar cập nhật ngay lập tức
-      window.dispatchEvent(new Event('authChange'));
-
-      // Chuyển hướng: Nếu là Admin, chuyển tới trang Admin
-      if (account.role === 'admin') {
-        navigate('/admin');
-        return;
-      }
-
-      // Chuyển hướng về trang trước đó hoặc trang chủ ứng viên
-      const redirectUrl = location.state?.from || '/';
-      navigate(redirectUrl);
+      await completeLogin(data);
     } catch (err) {
       setErrorMessage(err.message || 'Email hoặc mật khẩu không chính xác. Vui lòng thử lại!');
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleGoogleLogin = () => {
+    setErrorMessage('');
+    triggerGoogleLogin({
+      role: 'candidate',
+      onSuccess: async (payload) => {
+        setLoading(true);
+        try {
+          const data = await loginWithGoogle(payload);
+          await completeLogin(data);
+        } catch (err) {
+          setErrorMessage(err.message || 'Đăng nhập nhanh với Google thất bại. Vui lòng thử lại!');
+        } finally {
+          setLoading(false);
+        }
+      },
+      onError: (err) => {
+        setErrorMessage(err.message || 'Không thể mở cửa sổ đăng nhập Google.');
+      }
+    });
   };
 
   return (
@@ -202,7 +228,9 @@ export default function LoginPage() {
             <div className="pt-2">
               <button
                 type="button"
-                className="w-full flex items-center justify-center gap-2.5 px-4 py-2.5 rounded-xl bg-[#f2f3ff] hover:bg-[#eaedff] text-[#131b2e] text-xs font-bold transition-all border border-[#eaedff] cursor-pointer"
+                onClick={handleGoogleLogin}
+                disabled={loading}
+                className="w-full flex items-center justify-center gap-2.5 px-4 py-2.5 rounded-xl bg-[#f2f3ff] hover:bg-[#eaedff] text-[#131b2e] text-xs font-bold transition-all border border-[#eaedff] cursor-pointer disabled:opacity-60 disabled:cursor-wait"
               >
                 <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
                   <path d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.17z" fill="#4285F4" />
@@ -210,7 +238,7 @@ export default function LoginPage() {
                   <path d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 9.99 0 12s.45 3.82 1.25 5.42l4.03-3.15z" fill="#FBBC05" />
                   <path d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z" fill="#EA4335" />
                 </svg>
-                <span>Đăng nhập nhanh với Google</span>
+                <span>{loading ? 'Đang xác thực...' : 'Đăng nhập nhanh với Google'}</span>
               </button>
             </div>
 
@@ -226,7 +254,7 @@ export default function LoginPage() {
             {errorMessage && (
               <div className="p-3 bg-red-50 border border-red-200 rounded-xl flex items-start gap-2.5 text-xs text-red-700 animate-fadeIn">
                 <span className="material-symbols-outlined text-[18px] text-red-500 shrink-0 mt-0.5">error</span>
-                {/* <div className="flex-1">
+                <div className="flex-1">
                   <span>{errorMessage}</span>
                   {errorMessage.includes('Nhà tuyển dụng') && (
                     <div className="mt-2">
@@ -239,8 +267,7 @@ export default function LoginPage() {
                       </Link>
                     </div>
                   )}
-                </div> */}
-                <div>Sai tài khoản hoặc mật khẩu</div>
+                </div>
               </div>
             )}
 

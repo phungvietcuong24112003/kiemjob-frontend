@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { Link, Navigate } from 'react-router-dom';
+import { Link, Navigate, useSearchParams } from 'react-router-dom';
 import { hasAuthCookie } from '../../../infrastructure/utils/cookieUtils';
-import { applicationApi } from '../../../infrastructure/api/appicationApi';
+import { applicationApi } from '../../../infrastructure/api/applicationApi';
 import { getInterviewsByApplication } from '../../../infrastructure/api/interviewApi';
 import { useChat } from '../../../application/context/ChatContext';
 
@@ -96,11 +96,12 @@ const formatSalary = (min, max) => {
 };
 
 export default function JobApplicationPage() {
-  if (!hasAuthCookie()) {
-    return <Navigate to="/login" replace />;
-  }
+  const [searchParams] = useSearchParams();
+  const tabParam = searchParams.get('tab');
+  const appIdParam = searchParams.get('appId');
 
-  const [activeTab, setActiveTab] = useState('all');
+  const [activeTab, setActiveTab] = useState(() => tabParam || 'all');
+  const [highlightAppId, setHighlightAppId] = useState(() => appIdParam);
   const [searchTerm, setSearchTerm] = useState('');
   const [timeRange, setTimeRange] = useState('all');
   const [applications, setApplications] = useState([]);
@@ -110,6 +111,45 @@ export default function JobApplicationPage() {
   const [toastMessage, setToastMessage] = useState(null);
   const [expandedLetterId, setExpandedLetterId] = useState(null);
   const [openingChatId, setOpeningChatId] = useState(null);
+
+  // Đồng bộ tab & highlight khi URL query thay đổi
+  useEffect(() => {
+    if (tabParam) {
+      setActiveTab(tabParam);
+    }
+    if (appIdParam) {
+      setHighlightAppId(appIdParam);
+    }
+  }, [tabParam, appIdParam]);
+
+  // Tự động cuộn đến đơn ứng tuyển được chỉ định sau khi tải dữ liệu xong
+  useEffect(() => {
+    if (!isLoading && highlightAppId && applications.length > 0) {
+      // Nếu không có tabParam và đơn ứng tuyển ở trạng thái khác 'all', chuyển tab phù hợp
+      if (!tabParam) {
+        const target = applications.find((a) => String(a.id) === String(highlightAppId));
+        if (target && target.status && activeTab !== 'all' && activeTab !== target.status) {
+          setActiveTab(target.status);
+        }
+      }
+
+      const scrollTimer = setTimeout(() => {
+        const el = document.getElementById(`app-card-${highlightAppId}`);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 350);
+
+      const clearTimer = setTimeout(() => {
+        setHighlightAppId(null);
+      }, 4000);
+
+      return () => {
+        clearTimeout(scrollTimer);
+        clearTimeout(clearTimer);
+      };
+    }
+  }, [isLoading, highlightAppId, applications, tabParam, activeTab]);
 
   const { openChatWithRecruiter } = useChat();
 
@@ -182,6 +222,7 @@ export default function JobApplicationPage() {
   }, []);
 
   useEffect(() => {
+    if (!hasAuthCookie()) return;
     loadApplications();
   }, [loadApplications]);
 
@@ -242,6 +283,10 @@ export default function JobApplicationPage() {
     [applications]
   );
   const viewRate = totalCount > 0 ? `${Math.round((viewedCount / totalCount) * 100)}%` : '0%';
+
+  if (!hasAuthCookie()) {
+    return <Navigate to="/login" replace />;
+  }
 
   return (
     <div className="w-full bg-[#faf8ff] min-h-screen pb-16">
@@ -381,11 +426,17 @@ export default function JobApplicationPage() {
                   icon: 'info',
                 };
                 const salaryText = formatSalary(app.salaryMin, app.salaryMax);
+                const isTargetHighlighted = String(app.id) === String(highlightAppId);
 
                 return (
                   <article
                     key={app.id}
-                    className="bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition-all border border-[#eaedff] group"
+                    id={`app-card-${app.id}`}
+                    className={`bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition-all border group ${
+                      isTargetHighlighted
+                        ? 'border-[#005c55] ring-4 ring-[#005c55]/20 shadow-xl bg-teal-50/10 transition-all duration-500'
+                        : 'border-[#eaedff]'
+                    }`}
                   >
                     <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
                       {/* Company Logo & Core Job Information */}

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { chatApi, feedbackApi } from '../../../infrastructure/api';
+import { feedbackApi } from '../../../infrastructure/api';
 import { useChat } from '../../../application/context/ChatContext';
+import { ROLES } from '../../../domain/constants/roles';
 
 export default function FloatingWidgets() {
   // Use centralized chat context
@@ -20,6 +21,8 @@ export default function FloatingWidgets() {
     minimizeChat,
     restoreChat,
     sendMessage,
+    enableNotifications,
+    notificationPermission,
   } = useChat();
 
   // Feedback modal states
@@ -389,8 +392,34 @@ export default function FloatingWidgets() {
               </div>
             </div>
 
-            {/* Header Action Controls: Minimize & Close */}
+            {/* Header Action Controls: Notification, Minimize & Close */}
             <div className="flex items-center gap-0.5 shrink-0">
+              <button
+                type="button"
+                onClick={enableNotifications}
+                className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors cursor-pointer ${
+                  notificationPermission === 'granted'
+                    ? 'text-emerald-300 hover:text-white hover:bg-white/15'
+                    : notificationPermission === 'denied'
+                    ? 'text-red-300 hover:text-white hover:bg-white/15'
+                    : 'text-amber-300 hover:text-white hover:bg-white/15 animate-pulse'
+                }`}
+                title={
+                  notificationPermission === 'granted'
+                    ? 'Thông báo màn hình đang bật'
+                    : notificationPermission === 'denied'
+                    ? 'Thông báo bị chặn trong cài đặt trình duyệt'
+                    : 'Bấm để bật thông báo tin nhắn trên màn hình'
+                }
+              >
+                <span className="material-symbols-outlined text-[18px]">
+                  {notificationPermission === 'granted'
+                    ? 'notifications_active'
+                    : notificationPermission === 'denied'
+                    ? 'notifications_off'
+                    : 'notifications'}
+                </span>
+              </button>
               <button
                 type="button"
                 onClick={minimizeChat}
@@ -446,7 +475,7 @@ export default function FloatingWidgets() {
 
             {/* Messages */}
             {messages.map((msg) => {
-              const isMe = msg.senderType === 'candidate';
+              const isMe = msg.senderType === ROLES.CANDIDATE;
               return (
                 <div
                   key={msg.id}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+﻿import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import {
   getRecruiterProfile,
@@ -16,6 +16,7 @@ import {
 } from '../../../infrastructure/api';
 import CompanyTierBadge from '../../components/common/CompanyTierBadge';
 import { getTierProgress, formatCurrency, getTierConfig } from '../../../infrastructure/utils/companyTierUtils';
+import { USER } from '../../../config/storageKeys';
 
 export default function RecruiterCompanyPage() {
   const [loading, setLoading] = useState(true);
@@ -144,7 +145,7 @@ export default function RecruiterCompanyPage() {
       console.error('Lỗi khi tải thông tin công ty:', err);
       // Fallback từ localStorage nếu API tạm thời chưa phản hồi
       try {
-        const stored = localStorage.getItem('kiemjob_user');
+        const stored = localStorage.getItem(USER);
         if (stored) {
           const user = JSON.parse(stored);
           setFormData((prev) => ({
@@ -262,7 +263,7 @@ export default function RecruiterCompanyPage() {
 
       // Cập nhật lại localStorage để Header & Sidebar đồng bộ
       try {
-        const stored = localStorage.getItem('kiemjob_user');
+        const stored = localStorage.getItem(USER);
         const currentUser = stored ? JSON.parse(stored) : {};
         const updatedUser = {
           ...currentUser,
@@ -285,7 +286,7 @@ export default function RecruiterCompanyPage() {
             status: res?.status || formData.status,
           },
         };
-        localStorage.setItem('kiemjob_user', JSON.stringify(updatedUser));
+        localStorage.setItem(USER, JSON.stringify(updatedUser));
         window.dispatchEvent(new Event('authChange'));
       } catch (storageErr) {
         console.warn('Lỗi cập nhật local storage:', storageErr);
@@ -602,37 +603,6 @@ export default function RecruiterCompanyPage() {
 
       {/* Main Company Card with Banner & Logo */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
-        {/* Banner Area */}
-        <div className="relative h-44 sm:h-52 bg-slate-800 overflow-hidden">
-          {formData.bannerUrl ? (
-            <img
-              src={formData.bannerUrl}
-              alt="Company Banner"
-              className="w-full h-full object-cover"
-            />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center text-white/30">
-              <span className="material-symbols-outlined text-[56px]">apartment</span>
-            </div>
-          )}
-
-          {/* Change Banner Button */}
-          {isEditing && (
-            <button
-              type="button"
-              onClick={() => bannerInputRef.current?.click()}
-              disabled={uploadingBanner}
-              className="absolute top-4 right-4 px-3 py-1.5 bg-black/60 hover:bg-black/80 text-white text-xs font-semibold rounded-lg backdrop-blur-xs transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
-            >
-              {uploadingBanner ? (
-                <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-              ) : (
-                <span className="material-symbols-outlined text-[16px]">add_a_photo</span>
-              )}
-              <span>{uploadingBanner ? 'Đang tải...' : 'Đổi ảnh bìa'}</span>
-            </button>
-          )}
-        </div>
 
         {/* Company Header Info (Logo & Quick stats) */}
         <div className="px-6 pb-6 pt-0 relative">

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * client.js - Cấu hình HTTP Client cơ bản kết nối Frontend với Backend
  * 
  * Mục đích:
@@ -7,9 +7,11 @@
  * - Tự động gắn headers JSON, truyền Cookie (credentials: 'include') và trích xuất lỗi dễ hiểu.
  */
 
+import { API_BASE } from '../../config/site';
+import { USER } from '../../config/storageKeys';
+
 // Địa chỉ gốc của Backend API (đi qua proxy /api của Vite để tránh cross-origin)
-const rawBase = import.meta.env?.VITE_API_URL || '/api';
-const BASE_URL = rawBase.replace(/\/+$/, '');
+const BASE_URL = API_BASE;
 
 /**
  * Hàm gọi API chung (request helper)
@@ -105,10 +107,9 @@ export async function request(endpoint, options = {}) {
           document.cookie = 'logged_in=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/;';
         }
         if (typeof localStorage !== 'undefined') {
-          const hadUser = localStorage.getItem('kiemjob_user');
+          const hadUser = localStorage.getItem(USER);
           if (hadUser) {
-            localStorage.removeItem('kiemjob_user');
-            localStorage.removeItem('kiemjob_token');
+            localStorage.removeItem(USER);
             if (typeof window !== 'undefined') {
               window.dispatchEvent(new Event('authChange'));
             }

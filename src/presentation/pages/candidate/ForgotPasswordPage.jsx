@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { forgotPassword, verifyResetOtp, resetPassword } from '../../../infrastructure/api';
+import { ROLES } from '../../../domain/constants/roles';
 
 /**
  * Trang Quên Mật Khẩu (ForgotPasswordPage)
@@ -31,7 +32,7 @@ export default function ForgotPasswordPage() {
 
   // Kiểm tra nếu người dùng đến từ cổng Nhà tuyển dụng
   const queryParams = new URLSearchParams(location.search);
-  const isFromRecruiter = queryParams.get('from') === 'recruiter' || location.state?.from === 'recruiter';
+  const isFromRecruiter = queryParams.get('from') === ROLES.RECRUITER || location.state?.from === ROLES.RECRUITER;
 
   // Điều hướng khi nhấn Hủy
   const handleCancel = () => {

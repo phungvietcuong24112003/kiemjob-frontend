@@ -1,7 +1,10 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { login, resendOtp, getRecruiterProfile } from '../../../infrastructure/api';
+import { login, loginWithGoogle, resendOtp, getRecruiterProfile } from '../../../infrastructure/api';
+import { triggerGoogleLogin } from '../../../infrastructure/utils/googleAuth';
 import { setCookie } from '../../../infrastructure/utils/cookieUtils';
+import { USER } from '../../../config/storageKeys';
+import { ROLES } from '../../../domain/constants/roles';
 
 export default function RecruiterLoginPage() {
   const [email, setEmail] = useState('');
@@ -67,7 +70,7 @@ export default function RecruiterLoginPage() {
     const user = {
       id: account.id,
       email: account.email,
-      role: account.role || 'recruiter',
+      role: account.role || ROLES.RECRUITER,
       recruiterId,
       company_id: companyId,
       companyId: companyId,
@@ -81,7 +84,7 @@ export default function RecruiterLoginPage() {
     };
 
     setCookie('logged_in', 'true', rememberMe ? 14 : 1);
-    localStorage.setItem('kiemjob_user', JSON.stringify(user));
+    localStorage.setItem(USER, JSON.stringify(user));
     window.dispatchEvent(new Event('authChange'));
     setLoginSuccess(true);
 
@@ -124,7 +127,7 @@ export default function RecruiterLoginPage() {
       const account = await login({ email: trimmedEmail, password });
       
       const role = account?.role;
-      if (role && role !== 'recruiter' && role !== 'admin') {
+      if (role && role !== ROLES.RECRUITER && role !== ROLES.ADMIN) {
         throw new Error('Email này thuộc tài khoản Ứng viên. Vui lòng chuyển sang cổng dành cho Ứng viên.');
       }
 
@@ -162,79 +165,31 @@ export default function RecruiterLoginPage() {
     }
   };
 
+  const handleGoogleLogin = () => {
+    setErrorMessage('');
+    setIsUnverified(false);
+    triggerGoogleLogin({
+      role: 'recruiter',
+      onSuccess: async (payload) => {
+        setLoading(true);
+        try {
+          const account = await loginWithGoogle(payload);
+          await finalizeLogin(account);
+        } catch (err) {
+          setErrorMessage(err.message || 'Đăng nhập Google thất bại. Vui lòng thử lại!');
+        } finally {
+          setLoading(false);
+        }
+      },
+      onError: (err) => {
+        setErrorMessage(err.message || 'Không thể mở cửa sổ đăng nhập Google.');
+      }
+    });
+  };
+
   return (
-    <div className="bg-[#f3f5f8] text-slate-800 flex flex-col min-h-screen selection:bg-brand-600 selection:text-white font-sans antialiased">
-      {/* BEGIN: MainHeader */}
-      <header className="bg-white border-b border-slate-200/80 sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
-          {/* Logo and Brand Tagline */}
-          <div className="flex items-center space-x-10">
-            <Link to="/" className="flex items-center space-x-3 group" title="KiemJob Recruiter">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-800 to-brand-600 flex items-center justify-center text-white font-bold text-xl shadow-md group-hover:scale-105 transition-transform duration-200">
-                K
-              </div>
-              <div className="flex flex-col">
-                <span className="text-xl font-extrabold tracking-tight text-slate-900 group-hover:text-brand-700 transition">
-                  KiemJob
-                </span>
-                <span className="text-[11px] font-bold uppercase tracking-wider text-brand-700 -mt-1">
-                  Recruiter Hub
-                </span>
-              </div>
-            </Link>
-            {/* Main Navigation Links */}
-            <nav className="hidden md:flex items-center space-x-7">
-              <Link to="/" className="text-sm font-semibold text-slate-600 hover:text-brand-700 transition">
-                Trang chủ
-              </Link>
-              <Link to="/recruiter/candidates" className="text-sm font-semibold text-slate-600 hover:text-brand-700 transition">
-                Tìm ứng viên
-              </Link>
-              <a href="#pricing" onClick={(e) => { e.preventDefault(); alert('Bảng giá dịch vụ KiemJob đang được cập nhật.'); }} className="text-sm font-semibold text-slate-600 hover:text-brand-700 transition">
-                Bảng giá dịch vụ
-              </a>
-            </nav>
-          </div>
-
-          {/* Header Right Utilities & Switch Portal CTA */}
-          <div className="flex items-center space-x-4">
-            {/* Language Selector */}
-            <button
-              className="flex items-center space-x-1.5 text-sm font-semibold text-slate-600 hover:text-slate-900 px-3 py-1.5 rounded-lg border border-slate-200/90 transition bg-slate-50/50 cursor-pointer"
-              type="button"
-            >
-              <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
-              </svg>
-              <span>VN</span>
-            </button>
-
-            {/* Role Switcher Button */}
-            <Link
-              to="/login"
-              className="hidden sm:inline-flex items-center text-xs sm:text-sm font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 px-4 py-2 rounded-xl transition"
-            >
-              Dành cho Người tìm việc
-            </Link>
-
-            {/* Quick Access Icon */}
-            <Link
-              to="/recruiter/login"
-              aria-label="Tài khoản"
-              className="w-10 h-10 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center transition"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
-              </svg>
-            </Link>
-          </div>
-        </div>
-      </header>
-      {/* END: MainHeader */}
-
-      {/* BEGIN: MainContent */}
-      <main className="flex-grow flex items-center justify-center py-10 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-[1200px] w-full bg-white rounded-3xl shadow-xl border border-slate-100 overflow-hidden grid grid-cols-1 lg:grid-cols-12 emerald-glow">
+    <div className="w-full flex-1 py-8 sm:py-12 px-4 sm:px-6 lg:px-8 flex items-center justify-center bg-[#faf8ff] selection:bg-[#005c55] selection:text-white">
+      <div className="max-w-[1200px] w-full bg-white rounded-3xl shadow-xl border border-slate-100 overflow-hidden grid grid-cols-1 lg:grid-cols-12">
           {/* ================= LEFT COLUMN: Enterprise Value Proposition ================= */}
           <section className="lg:col-span-5 bg-gradient-to-b from-[#0f766e] to-[#0c5953] text-white p-7 sm:p-9 flex flex-col justify-between relative overflow-hidden">
             {/* Decorative Ambient Light */}
@@ -357,8 +312,9 @@ export default function RecruiterLoginPage() {
                 {/* Google SSO */}
                 <button
                   type="button"
-                  onClick={() => alert('Đang kết nối cổng Google Workspace Doanh nghiệp...')}
-                  className="flex items-center justify-center gap-2.5 px-4 py-2.5 border border-slate-200 rounded-xl hover:bg-slate-50 hover:border-slate-300 transition text-sm font-semibold text-slate-700 shadow-sm cursor-pointer"
+                  onClick={handleGoogleLogin}
+                  disabled={loading}
+                  className="flex items-center justify-center gap-2.5 px-4 py-2.5 border border-slate-200 rounded-xl hover:bg-slate-50 hover:border-slate-300 transition text-sm font-semibold text-slate-700 shadow-sm cursor-pointer disabled:opacity-60 disabled:cursor-wait"
                 >
                   <svg className="w-4 h-4" viewBox="0 0 24 24">
                     <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
@@ -366,7 +322,7 @@ export default function RecruiterLoginPage() {
                     <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05" />
                     <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" fill="#EA4335" />
                   </svg>
-                  <span>Google</span>
+                  <span>{loading ? 'Đang xác thực...' : 'Google'}</span>
                 </button>
 
                 {/* Microsoft 365 Enterprise SSO */}
@@ -577,32 +533,6 @@ export default function RecruiterLoginPage() {
           </section>
           {/* END: RightLoginForm */}
         </div>
-      </main>
-      {/* END: MainContent */}
-
-      {/* BEGIN: MainFooter */}
-      <footer className="bg-white border-t border-slate-200/80 py-6 text-xs text-slate-500">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
-          {/* Copyright Information */}
-          <p>© 2026 KiemJob Inc. Tất cả quyền được bảo lưu.</p>
-          {/* Footer Policy Links */}
-          <div className="flex items-center space-x-6">
-            <a className="hover:text-slate-800 transition" href="#privacy" onClick={(e) => e.preventDefault()}>
-              Chính sách bảo mật
-            </a>
-            <a className="hover:text-slate-800 transition" href="#terms" onClick={(e) => e.preventDefault()}>
-              Điều khoản sử dụng
-            </a>
-            <span className="inline-flex items-center gap-1.5 text-slate-700 font-medium">
-              <svg className="w-3.5 h-3.5 text-brand-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
-              </svg>
-              Hotline: 1900 6868
-            </span>
-          </div>
-        </div>
-      </footer>
-      {/* END: MainFooter */}
     </div>
   );
 }

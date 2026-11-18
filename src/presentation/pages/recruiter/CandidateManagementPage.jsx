@@ -1,13 +1,16 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { jobPostApi } from '../../../infrastructure/api/jobPostApi';
-import { applicationApi } from '../../../infrastructure/api/appicationApi';
+import { applicationApi } from '../../../infrastructure/api/applicationApi';
 import { useRecruiterChat } from '../../../application/context/RecruiterChatContext';
 import useAiScores from '../../../application/hooks/useAiScores';
 import ApplicantTable from '../../components/recruiter/ApplicantTable';
 import CvDetailModal from '../../components/recruiter/CvDetailModal';
 
 export default function CandidateManagementPage() {
+  const [searchParams] = useSearchParams();
+  const applicationIdParam = searchParams.get('applicationId');
+
   const [jobPosts, setJobPosts] = useState([]);
   const [filterJob, setFilterJob] = useState('all');
   const [applications, setApplications] = useState([]);
@@ -150,6 +153,16 @@ const handleOpenCv = async (app) => {
     console.error('Lỗi lấy chi tiết đơn ứng tuyển:', err);
   }
 };
+
+  // Tự động mở modal chi tiết CV khi có applicationId trên URL
+  useEffect(() => {
+    if (!loading && applicationIdParam && applications.length > 0) {
+      const target = applications.find((a) => String(a.id) === String(applicationIdParam));
+      if (target) {
+        handleOpenCv(target);
+      }
+    }
+  }, [loading, applicationIdParam, applications]);
 
   // 7. Thống kê nhanh
   const stats = useMemo(() => {

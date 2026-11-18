@@ -1,4 +1,4 @@
-/**
+﻿/**
  * User Entity
  * Định nghĩa cấu trúc chuẩn của thực thể User trong domain KiemJob
  *
@@ -18,7 +18,7 @@ export function createUser(data = {}) {
   return {
     id: data.id || null,
     email: data.email || '',
-    role: data.role || 'candidate',
+    role: data.role || ROLES.CANDIDATE,
     fullName: data.fullName || data.name || '',
     avatarUrl: data.avatarUrl || data.avatar || '',
     phoneNumber: data.phoneNumber || data.phone || '',

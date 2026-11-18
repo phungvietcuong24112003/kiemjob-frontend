@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import { hasAuthCookie } from '../../../infrastructure/utils/cookieUtils';
+import { USER } from '../../../config/storageKeys';
 import {
   getProvinces,
   getCandidateProfile,
@@ -92,11 +93,6 @@ const LINK_TYPES = [
 ];
 
 export default function InformationPage() {
-  // 1. Kiểm tra xác thực qua Cookie
-  if (!hasAuthCookie()) {
-    return <Navigate to="/login" replace />;
-  }
-
   // State thông tin ứng viên
   const [candidate, setCandidate] = useState({
     id: null,
@@ -207,9 +203,13 @@ const displayGender = (gender) => {
     let isMounted = true;
 
     async function fetchData() {
+      if (!hasAuthCookie()) {
+        if (isMounted) setLoading(false);
+        return;
+      }
       setLoading(true);
       try {
-        const storedUser = JSON.parse(localStorage.getItem('kiemjob_user') || 'null');
+        const storedUser = JSON.parse(localStorage.getItem(USER) || 'null');
         const fallbackEmail = storedUser?.email || '';
 
         // Tải danh mục tỉnh/thành
@@ -334,11 +334,11 @@ const displayGender = (gender) => {
 
         // Cập nhật localStorage
         try {
-          const stored = localStorage.getItem('kiemjob_user');
+          const stored = localStorage.getItem(USER);
           if (stored) {
             const userObj = JSON.parse(stored);
             userObj.avatar = newAvatarUrl;
-            localStorage.setItem('kiemjob_user', JSON.stringify(userObj));
+            localStorage.setItem(USER, JSON.stringify(userObj));
             window.dispatchEvent(new Event('authChange'));
           }
         } catch (err) {
@@ -425,7 +425,7 @@ const displayGender = (gender) => {
 
       // Đồng bộ thông tin vào localStorage để Header hiển thị ngay
       try {
-        const stored = localStorage.getItem('kiemjob_user');
+        const stored = localStorage.getItem(USER);
         if (stored) {
           const userObj = JSON.parse(stored);
           userObj.fullName = payload.fullname;
@@ -433,7 +433,7 @@ const displayGender = (gender) => {
           userObj.title = payload.headline || '';
           userObj.phone = payload.phone || '';
           if (payload.avatarUrl) userObj.avatar = payload.avatarUrl;
-          localStorage.setItem('kiemjob_user', JSON.stringify(userObj));
+          localStorage.setItem(USER, JSON.stringify(userObj));
           window.dispatchEvent(new Event('authChange'));
         }
       } catch (e) {
@@ -563,6 +563,10 @@ const displayGender = (gender) => {
       setDeletingLink(false);
     }
   };
+
+  if (!hasAuthCookie()) {
+    return <Navigate to="/login" replace />;
+  }
 
   return (
     <div className="w-full bg-[#faf8ff] min-h-screen text-[#131b2e] pb-16 font-sans">

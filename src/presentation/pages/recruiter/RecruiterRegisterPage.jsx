@@ -1,6 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
+﻿import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { registerRecruiter, resendOtp, verifyEmail } from '../../../infrastructure/api';
+import { USER } from '../../../config/storageKeys';
+import { ROLES } from '../../../domain/constants/roles';
 
 /**
  * Trang Đăng Ký Tài Khoản Nhà Tuyển Dụng (RecruiterRegisterPage.jsx)
@@ -189,7 +191,7 @@ export default function RecruiterRegisterPage() {
       const user = {
         id: account?.id || Date.now(),
         email: account?.email || trimmedEmail,
-        role: 'recruiter',
+        role: ROLES.RECRUITER,
         fullName: null,
         company_name: null,
         companyId: null,
@@ -208,8 +210,7 @@ export default function RecruiterRegisterPage() {
         profileCompleted: false,
       };
 
-      localStorage.setItem('kiemjob_user', JSON.stringify(user));
-      localStorage.removeItem('kiemjob_token');
+      localStorage.setItem(USER, JSON.stringify(user));
       window.dispatchEvent(new Event('authChange'));
 
       setSuccessMessage('Xác thực tài khoản thành công! Đang chuyển đến trang hoàn tất thông tin doanh nghiệp ban đầu...');
@@ -250,65 +251,8 @@ export default function RecruiterRegisterPage() {
   };
 
   return (
-    <div className="bg-slate-50 text-slate-800 min-h-screen flex flex-col justify-between selection:bg-[#005c55] selection:text-white font-sans antialiased">
-      {/* Header thanh điều hướng */}
-      <header className="w-full bg-white/90 backdrop-blur-md border-b border-slate-100 sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
-          <div className="flex items-center space-x-8">
-            <Link to="/" className="flex items-center space-x-2.5 group focus:outline-none">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-[#004e48] to-[#007952] flex items-center justify-center shadow-md shadow-[#005c55]/20 group-hover:scale-105 transition-transform duration-200">
-                <span className="text-white font-black text-xl tracking-tight">K</span>
-              </div>
-              <div className="flex flex-col">
-                <span className="text-2xl font-extrabold text-slate-900 tracking-tight leading-none">
-                  Kiem<span className="text-[#005c55]">Job</span>
-                </span>
-                <span className="text-[10px] font-bold text-[#005c55] uppercase tracking-widest mt-0.5 flex items-center gap-1">
-                  Recruiter <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block animate-pulse" />
-                </span>
-              </div>
-            </Link>
-
-            <nav className="hidden md:flex items-center space-x-7 text-sm font-semibold text-slate-600">
-              <Link to="/" className="hover:text-[#005c55] transition-colors py-1">
-                Trang chủ
-              </Link>
-              <Link to="/recruiter/candidates" className="hover:text-[#005c55] transition-colors py-1">
-                Tìm ứng viên
-              </Link>
-              <a
-                href="#pricing"
-                onClick={(e) => { e.preventDefault(); alert('Bảng giá dịch vụ KiemJob đang được cập nhật.'); }}
-                className="hover:text-[#005c55] transition-colors py-1"
-              >
-                Bảng giá dịch vụ
-              </a>
-            </nav>
-          </div>
-
-          <div className="flex items-center space-x-4">
-            <Link
-              to="/register"
-              className="inline-flex items-center text-xs sm:text-sm font-semibold text-[#005c55] bg-[#e6f7f5] hover:bg-[#d0f2ec] border border-[#97f5cc]/70 px-4 py-2.5 rounded-full transition-all duration-200 shadow-sm"
-            >
-              <span>Dành cho Người tìm việc</span>
-              <i className="fa-solid fa-arrow-right ml-1.5 text-xs text-[#005c55]" />
-            </Link>
-
-            <Link
-              to="/recruiter/login"
-              aria-label="Tài khoản"
-              className="w-10 h-10 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600 transition-colors focus:ring-2 focus:ring-[#005c55] focus:outline-none"
-            >
-              <i className="fa-regular fa-user text-base" />
-            </Link>
-          </div>
-        </div>
-      </header>
-
-      {/* Thân trang: 2 cột */}
-      <main className="flex-grow flex items-center justify-center py-8 lg:py-12 px-4 sm:px-6">
-        <div className="w-full max-w-6xl bg-white rounded-3xl shadow-2xl shadow-slate-200/60 overflow-hidden border border-slate-100 grid grid-cols-1 lg:grid-cols-12 min-h-[700px]">
+    <div className="w-full flex-1 py-8 sm:py-12 px-4 sm:px-6 lg:px-8 flex items-center justify-center bg-[#faf8ff] selection:bg-[#005c55] selection:text-white">
+      <div className="w-full max-w-6xl bg-white rounded-3xl shadow-2xl shadow-slate-200/60 overflow-hidden border border-slate-100 grid grid-cols-1 lg:grid-cols-12 min-h-[700px]">
           {/* Cột trái: Giới thiệu quyền lợi nhà tuyển dụng */}
           <section className="lg:col-span-5 bg-gradient-to-br from-[#004e48] via-[#005c55] to-[#016f67] text-white p-8 sm:p-10 flex flex-col justify-between relative overflow-hidden">
             <div className="absolute -right-24 -top-24 w-80 h-80 rounded-full bg-emerald-400/10 blur-3xl pointer-events-none" />
@@ -693,28 +637,6 @@ export default function RecruiterRegisterPage() {
             </div>
           </section>
         </div>
-      </main>
-
-      {/* Footer trang */}
-      <footer className="w-full bg-white border-t border-slate-200/70 py-6 text-xs text-slate-500">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row items-center justify-between gap-4">
-          <div>
-            <p>© 2026 KiemJob Inc. Nền tảng tuyển dụng &amp; kết nối nhân tài hàng đầu.</p>
-          </div>
-          <div className="flex items-center space-x-6 font-medium">
-            <a className="hover:text-slate-800 transition-colors" href="#privacy" onClick={(e) => e.preventDefault()}>
-              Chính sách bảo mật
-            </a>
-            <a className="hover:text-slate-800 transition-colors" href="#terms" onClick={(e) => e.preventDefault()}>
-              Điều khoản sử dụng
-            </a>
-            <a className="flex items-center space-x-1.5 hover:text-slate-800 transition-colors" href="tel:19006868">
-              <i className="fa-solid fa-phone text-slate-400" />
-              <span>Hotline: 1900 6868</span>
-            </a>
-          </div>
-        </div>
-      </footer>
     </div>
   );
 }

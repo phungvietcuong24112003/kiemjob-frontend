@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { adminApi, jobPostApi } from '../../../infrastructure/api';
+import { adminApi, jobPostApi, jobPostingOrderApi } from '../../../infrastructure/api';
+import RichTextViewer from '../../components/editor/RichTextViewer';
 
 const LABEL_VIETNAMESE = {
   JOB_SCAM: 'Dấu hiệu lừa đảo tuyển dụng',
@@ -39,6 +40,20 @@ export default function PostJobManagementPage() {
   const [statusFilter, setStatusFilter] = useState('all'); // 'all', 'draft', 'open', 'closed'
   const [searchTerm, setSearchTerm] = useState('');
   const [toastMsg, setToastMsg] = useState(null);
+
+  // Tab chính: Quản lý tin ('jobs') hoặc Đối soát thanh toán ('reconciliation')
+  const [activeMainTab, setActiveMainTab] = useState('jobs');
+  const [reconciliationOrders, setReconciliationOrders] = useState([]);
+  const [loadingReconciliation, setLoadingReconciliation] = useState(false);
+
+  // Modal Từ chối tin tuyển dụng
+  const [rejectModalJob, setRejectModalJob] = useState(null);
+  const [rejectReason, setRejectReason] = useState('');
+
+  // Modal Kích hoạt thủ công cho đơn đối soát
+  const [manualActivateOrder, setManualActivateOrder] = useState(null);
+  const [manualReason, setManualReason] = useState('');
+  const [manualDays, setManualDays] = useState(30);
 
   // Modal State
   const [selectedJob, setSelectedJob] = useState(null);
@@ -131,6 +146,93 @@ export default function PostJobManagementPage() {
     setJobSkills([]);
     setJobSpecializations([]);
   };
+
+  const handleApproveJob = async (job) => {
+    setActionLoadingId(job.id);
+    try {
+      await jobPostingOrderApi.moderateJobPost(job.id, 'APPROVED');
+      if (job.postingType === 'PAID') {
+        showToast(`Đã duyệt tin "${job.title}". Đơn hàng chờ thanh toán đã được tạo tự động cho Nhà tuyển dụng!`);
+      } else {
+        showToast(`Đã duyệt và công khai tin miễn phí "${job.title}"!`);
+      }
+      await fetchJobs();
+      if (selectedJob && selectedJob.id === job.id) {
+        setSelectedJob((prev) => prev ? { ...prev, moderationStatus: 'APPROVED' } : null);
+      }
+    } catch (err) {
+      console.error('Lỗi khi duyệt tin:', err);
+      showToast(err?.response?.data?.message || 'Không thể phê duyệt tin', 'error');
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  const handleOpenRejectModal = (job) => {
+    setRejectModalJob(job);
+    setRejectReason('');
+  };
+
+  const handleConfirmReject = async () => {
+    if (!rejectModalJob) return;
+    if (!rejectReason.trim()) {
+      showToast('Vui lòng nhập lý do từ chối tin tuyển dụng', 'error');
+      return;
+    }
+    setActionLoadingId(rejectModalJob.id);
+    try {
+      await jobPostingOrderApi.moderateJobPost(rejectModalJob.id, 'REJECTED', rejectReason.trim());
+      showToast(`Đã từ chối tin "${rejectModalJob.title}"`);
+      setRejectModalJob(null);
+      await fetchJobs();
+      if (selectedJob && selectedJob.id === rejectModalJob.id) {
+        setSelectedJob(null);
+      }
+    } catch (err) {
+      console.error('Lỗi từ chối tin:', err);
+      showToast(err?.response?.data?.message || 'Không thể từ chối tin', 'error');
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  const fetchReconciliationOrders = async () => {
+    setLoadingReconciliation(true);
+    try {
+      const res = await jobPostingOrderApi.getReconciliationOrders();
+      const list = res?.data?.content || res?.content || [];
+      setReconciliationOrders(list);
+    } catch (err) {
+      console.error('Lỗi tải đơn đối soát:', err);
+      showToast('Không thể tải danh sách đơn đối soát', 'error');
+    } finally {
+      setLoadingReconciliation(false);
+    }
+  };
+
+  const handleManualActivate = async () => {
+    if (!manualActivateOrder) return;
+    if (!manualReason.trim()) {
+      showToast('Vui lòng nhập lý do kích hoạt thủ công', 'error');
+      return;
+    }
+    try {
+      await jobPostingOrderApi.manualActivateOrder(manualActivateOrder.id, manualReason.trim(), manualDays);
+      showToast(`Đã kích hoạt thành công đơn #${manualActivateOrder.id}!`);
+      setManualActivateOrder(null);
+      await fetchReconciliationOrders();
+      await fetchJobs();
+    } catch (err) {
+      console.error('Lỗi kích hoạt thủ công:', err);
+      showToast(err?.response?.data?.message || 'Không thể kích hoạt đơn', 'error');
+    }
+  };
+
+  useEffect(() => {
+    if (activeMainTab === 'reconciliation') {
+      fetchReconciliationOrders();
+    }
+  }, [activeMainTab]);
 
   const handleUpdateStatus = async (id, title, newStatus) => {
     setActionLoadingId(id);
@@ -364,10 +466,32 @@ export default function PostJobManagementPage() {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-[18px] font-bold text-[#131b2e] tracking-tight">Kiểm Duyệt & Quản Lý Tin Tuyển Dụng</h1>
+          <h1 className="text-[18px] font-bold text-[#131b2e] tracking-tight">Kiểm Duyệt Tin Tuyển Dụng & Đối Soát Tài Chính</h1>
+          <div className="flex items-center gap-2 mt-2">
+            <button
+              onClick={() => setActiveMainTab('jobs')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                activeMainTab === 'jobs'
+                  ? 'bg-[#005c55] text-white shadow-xs'
+                  : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+              }`}
+            >
+              Quản lý & Duyệt tin tuyển dụng
+            </button>
+            <button
+              onClick={() => setActiveMainTab('reconciliation')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                activeMainTab === 'reconciliation'
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+              }`}
+            >
+              <span>Đối soát thanh toán & Kích hoạt thủ công</span>
+            </button>
+          </div>
         </div>
         <button
-          onClick={fetchJobs}
+          onClick={activeMainTab === 'jobs' ? fetchJobs : fetchReconciliationOrders}
           className="self-start md:self-auto flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-[#eaedff] border border-[#eaedff] text-[#005c55] rounded-lg text-[13px] font-semibold transition-colors shadow-2xs cursor-pointer"
         >
           <span className="material-symbols-outlined text-[18px]">refresh</span>
@@ -376,6 +500,7 @@ export default function PostJobManagementPage() {
       </div>
 
       {/* Main card */}
+      {activeMainTab === 'jobs' ? (
       <div className="bg-white p-4 sm:p-5 rounded-xl border border-[#eaedff] shadow-xs space-y-4">
         {/* Filter and search controls */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -435,9 +560,9 @@ export default function PostJobManagementPage() {
                 <tr className="border-b border-[#eaedff] text-[#6e7977] uppercase tracking-wider font-bold text-[12px]">
                   <th className="pb-3">Tiêu đề tin tuyển</th>
                   <th className="pb-3">Doanh nghiệp</th>
+                  <th className="pb-3">Loại tin</th>
                   <th className="pb-3">Ngành nghề</th>
                   <th className="pb-3">Mức lương</th>
-                  <th className="pb-3">Hạn nộp</th>
                   <th className="pb-3">Kiểm duyệt AI</th>
                   <th className="pb-3">Trạng thái</th>
                   <th className="pb-3 text-right">Thao tác</th>
@@ -474,14 +599,25 @@ export default function PostJobManagementPage() {
                       <td className="py-3.5 text-[#3e4947] font-medium">
                         {job.companyName || 'Công ty ẩn'}
                       </td>
+                      <td className="py-3.5 whitespace-nowrap">
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                          job.postingType === 'PAID'
+                            ? 'bg-blue-100 text-blue-800 border border-blue-200'
+                            : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                        }`}>
+                          {job.postingType === 'PAID' ? 'PAID' : 'FREE'}
+                        </span>
+                        {job.postingType === 'PAID' && job.durationDays && (
+                          <span className="text-[10px] text-slate-500 block mt-0.5">
+                            {job.durationDays} ngày
+                          </span>
+                        )}
+                      </td>
                       <td className="py-3.5 text-[#005c55] font-semibold">
                         {job.categoryName || 'Chung'}
                       </td>
                       <td className="py-3.5 font-bold text-[#005c55] whitespace-nowrap">
                         {formatSalary(job.salaryMin, job.salaryMax)}
-                      </td>
-                      <td className="py-3.5 text-[#6e7977] whitespace-nowrap">
-                        {job.applicationDeadline || 'Không giới hạn'}
                       </td>
                       <td className="py-3.5 whitespace-nowrap">
                         {renderAiModerationBadge(job.latestModeration)}
@@ -525,30 +661,22 @@ export default function PostJobManagementPage() {
                           <button
                             type="button"
                             disabled={isActioning || isModerating}
-                            onClick={() => handleUpdateStatus(job.id, job.title, 'open')}
+                            onClick={() => handleApproveJob(job)}
                             className="px-2.5 py-1 bg-[#005c55] hover:bg-[#007952] disabled:opacity-50 text-white font-bold rounded-lg text-[11px] transition-colors cursor-pointer"
                           >
-                            Duyệt đăng
+                            Duyệt tin
                           </button>
                         )}
-                        {job.status === 'open' && (
+                        {job.status !== 'closed' && (
                           <button
                             type="button"
                             disabled={isActioning || isModerating}
-                            onClick={() => handleUpdateStatus(job.id, job.title, 'closed')}
-                            className="px-2.5 py-1 bg-[#f2f3ff] hover:bg-[#eaedff] disabled:opacity-50 text-[#3e4947] font-bold rounded-lg text-[11px] transition-colors cursor-pointer"
+                            onClick={() => handleOpenRejectModal(job)}
+                            className="px-2.5 py-1 bg-[#ffdad6]/80 hover:bg-[#ffdad6] disabled:opacity-50 text-[#ba1a1a] font-bold rounded-lg text-[11px] transition-colors cursor-pointer"
                           >
-                            Đóng tin
+                            Từ chối
                           </button>
                         )}
-                        <button
-                          type="button"
-                          disabled={isActioning || isModerating}
-                          onClick={() => handleDeleteJob(job.id, job.title)}
-                          className="px-2.5 py-1 bg-[#ffdad6]/60 hover:bg-[#ffdad6] disabled:opacity-50 text-[#ba1a1a] font-bold rounded-lg text-[11px] transition-colors cursor-pointer"
-                        >
-                          Xóa
-                        </button>
                       </td>
                     </tr>
                   );
@@ -558,6 +686,96 @@ export default function PostJobManagementPage() {
           )}
         </div>
       </div>
+      ) : (
+      /* Bảng Đối soát tài chính */
+      <div className="bg-white p-4 sm:p-5 rounded-xl border border-blue-200 shadow-xs space-y-4">
+        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-5 bg-blue-600 rounded-full" />
+            <h2 className="text-sm font-bold text-slate-900">
+              Danh sách đơn hàng cần đối soát tài chính
+            </h2>
+          </div>
+          <span className="text-xs text-slate-500">
+            Các giao dịch nộp trễ (PAID_AFTER_EXPIRED), lệch số tiền (AMOUNT_MISMATCH)...
+          </span>
+        </div>
+
+        <div className="overflow-x-auto">
+          {loadingReconciliation ? (
+            <div className="py-12 text-center text-xs text-slate-500">
+              <div className="inline-block animate-spin w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full mb-2" />
+              <p>Đang tải danh sách đơn đối soát...</p>
+            </div>
+          ) : reconciliationOrders.length === 0 ? (
+            <div className="py-12 text-center text-xs text-slate-500">
+              <span className="material-symbols-outlined text-4xl text-slate-300 mb-1">check_circle</span>
+              <p className="font-semibold text-sm text-slate-800">Không có đơn hàng nào cần đối soát</p>
+              <p className="text-[11px] mt-0.5">Tất cả các giao dịch đều đã được xử lý chuẩn xác.</p>
+            </div>
+          ) : (
+            <table className="w-full text-left text-[13px]">
+              <thead>
+                <tr className="border-b border-slate-200 text-slate-500 uppercase tracking-wider font-bold text-[11px]">
+                  <th className="pb-3">Mã đơn</th>
+                  <th className="pb-3">Tin tuyển dụng</th>
+                  <th className="pb-3">Doanh nghiệp</th>
+                  <th className="pb-3">Số tiền</th>
+                  <th className="pb-3">Trạng thái đơn</th>
+                  <th className="pb-3">Đối soát</th>
+                  <th className="pb-3">Hoàn tiền</th>
+                  <th className="pb-3 text-right">Thao tác</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {reconciliationOrders.map((ord) => (
+                  <tr key={ord.id} className="hover:bg-slate-50 transition-colors">
+                    <td className="py-3 font-mono font-bold text-slate-700">#{ord.id}</td>
+                    <td className="py-3 font-semibold text-slate-900 max-w-xs truncate">{ord.jobTitle}</td>
+                    <td className="py-3 text-slate-600">{ord.companyName}</td>
+                    <td className="py-3 font-bold text-blue-700">{ord.totalAmount?.toLocaleString('vi-VN')} đ</td>
+                    <td className="py-3">
+                      <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-slate-100 text-slate-700">
+                        {ord.status}
+                      </span>
+                    </td>
+                    <td className="py-3">
+                      <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-amber-100 text-amber-800">
+                        {ord.reconciliationStatus}
+                      </span>
+                    </td>
+                    <td className="py-3">
+                      <span className={`px-2 py-0.5 rounded text-[11px] font-semibold ${
+                        ord.refundStatus !== 'NONE' ? 'bg-red-100 text-red-800' : 'bg-slate-100 text-slate-600'
+                      }`}>
+                        {ord.refundStatus}
+                      </span>
+                    </td>
+                    <td className="py-3 text-right">
+                      {ord.refundStatus === 'NONE' && ord.reconciliationStatus !== 'RECONCILED_ACTIVATED' ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setManualActivateOrder(ord);
+                            setManualDays(ord.durationDays || 30);
+                            setManualReason('');
+                          }}
+                          className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                        >
+                          Kích hoạt thủ công
+                        </button>
+                      ) : (
+                        <span className="text-xs text-slate-400 italic">Đã xử lý / Đã hoàn tiền</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+      )}
 
       {/* ======================================================== */}
       {/* REDESIGNED MODAL DIALOG: CHI TIẾT ĐẦY ĐỦ BÀI TUYỂN DỤNG */}
@@ -945,7 +1163,7 @@ export default function PostJobManagementPage() {
                           </h5>
                         </div>
                         <div className="pl-4 border-l-2 border-[#eaedff]">
-                          {renderFormattedContent(detail.content)}
+                          <RichTextViewer content={detail.content} className="text-[13px] text-[#2c3635]" />
                         </div>
                       </div>
                     ))}
@@ -1005,7 +1223,7 @@ export default function PostJobManagementPage() {
                     <button
                       type="button"
                       disabled={actionLoadingId === selectedJob.id}
-                      onClick={() => handleUpdateStatus(selectedJob.id, selectedJob.title, 'closed')}
+                      onClick={() => handleOpenRejectModal(selectedJob)}
                       className="px-4 py-2.5 bg-[#ffdad6] hover:bg-[#ffb4ab] text-[#ba1a1a] font-bold rounded-xl text-xs transition-colors cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
                     >
                       <span className="material-symbols-outlined text-[16px]">cancel</span>
@@ -1014,11 +1232,11 @@ export default function PostJobManagementPage() {
                     <button
                       type="button"
                       disabled={actionLoadingId === selectedJob.id}
-                      onClick={() => handleUpdateStatus(selectedJob.id, selectedJob.title, 'open')}
+                      onClick={() => handleApproveJob(selectedJob)}
                       className="px-6 py-2.5 bg-[#005c55] hover:bg-[#007952] text-white font-bold rounded-xl text-xs shadow-md transition-colors cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
                     >
                       <span className="material-symbols-outlined text-[16px]">check_circle</span>
-                      <span>Duyệt & Công Khai</span>
+                      <span>{selectedJob.postingType === 'PAID' ? 'Duyệt (Chờ thanh toán)' : 'Duyệt & Công Khai'}</span>
                     </button>
                   </>
                 ) : (
@@ -1044,6 +1262,154 @@ export default function PostJobManagementPage() {
                   </>
                 )}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Từ chối duyệt tin */}
+      {rejectModalJob && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fade-in">
+          <div className="bg-white w-full max-w-md rounded-2xl p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2 text-red-600 font-bold text-base">
+                <span className="material-symbols-outlined">report</span>
+                <span>Từ chối duyệt tin</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRejectModalJob(null)}
+                className="text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+
+            <div>
+              <p className="text-xs text-slate-500 mb-1">Tin tuyển dụng:</p>
+              <p className="text-sm font-bold text-slate-800 line-clamp-1">{rejectModalJob.title}</p>
+              <p className="text-xs text-slate-600 mt-0.5">{rejectModalJob.companyName}</p>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-slate-700 block">
+                Lý do từ chối <span className="text-red-500">*</span>:
+              </label>
+              <textarea
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                placeholder="Nhập lý do cụ thể (nội dung chưa đạt, vi phạm chính sách tuyển dụng, lừa đảo...)"
+                rows={4}
+                className="w-full text-xs p-3 border border-slate-200 rounded-xl focus:border-red-500 focus:ring-1 focus:ring-red-500 outline-none resize-none"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setRejectModalJob(null)}
+                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                disabled={actionLoadingId === rejectModalJob.id}
+                onClick={handleConfirmReject}
+                className="px-4 py-2 text-xs font-bold bg-red-600 hover:bg-red-700 text-white rounded-xl shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+              >
+                {actionLoadingId === rejectModalJob.id ? 'Đang xử lý...' : 'Xác nhận từ chối'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Kích hoạt thủ công cho đơn đối soát */}
+      {manualActivateOrder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fade-in">
+          <div className="bg-white w-full max-w-lg rounded-2xl p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2 text-blue-600 font-bold text-base">
+                <span className="material-symbols-outlined">verified</span>
+                <span>Kích hoạt tin thủ công (Đối soát)</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setManualActivateOrder(null)}
+                className="text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+
+            <div className="bg-blue-50/70 border border-blue-100 rounded-xl p-3.5 space-y-1.5 text-xs">
+              <div className="flex justify-between">
+                <span className="text-slate-500">Mã đơn hàng:</span>
+                <span className="font-mono font-bold text-slate-800">#{manualActivateOrder.id}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Tin tuyển dụng:</span>
+                <span className="font-semibold text-slate-900 max-w-xs truncate">{manualActivateOrder.jobTitle}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Doanh nghiệp:</span>
+                <span className="font-medium text-slate-800">{manualActivateOrder.companyName}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Số tiền đã trả:</span>
+                <span className="font-bold text-blue-700">{manualActivateOrder.totalAmount?.toLocaleString('vi-VN')} đ</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Lý do đối soát:</span>
+                <span className="font-bold text-amber-700">{manualActivateOrder.reconciliationStatus}</span>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">
+                  Số ngày hiển thị được cấp:
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  max={365}
+                  value={manualDays}
+                  onChange={(e) => setManualDays(Math.max(1, parseInt(e.target.value) || 1))}
+                  className="w-full text-xs p-2.5 border border-slate-200 rounded-xl focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">
+                  Lý do / Ghi chú đối soát của Admin <span className="text-red-500">*</span>:
+                </label>
+                <textarea
+                  value={manualReason}
+                  onChange={(e) => setManualReason(e.target.value)}
+                  placeholder="Ghi chú xác minh giao dịch (VD: Đã kiểm tra sao kê ngân hàng nộp tiền đúng sau khi đơn quá hạn...)"
+                  rows={3}
+                  className="w-full text-xs p-3 border border-slate-200 rounded-xl focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none resize-none"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setManualActivateOrder(null)}
+                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                onClick={handleManualActivate}
+                className="px-5 py-2 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-xs transition-colors cursor-pointer"
+              >
+                Kích hoạt ngay
+              </button>
             </div>
           </div>
         </div>

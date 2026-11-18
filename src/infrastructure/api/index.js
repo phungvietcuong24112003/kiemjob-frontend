@@ -27,6 +27,7 @@ export {
     registerCandidate,
     registerRecruiter,
     login,
+    loginWithGoogle,
     sendRecruiterLoginOtp,
     loginRecruiterOtp,
     resendOtp,
@@ -59,8 +60,6 @@ export { default as provinceApi } from './provinceApi';
 // 4. Export API Nhắn tin & Cuộc trò chuyện (Conversation, WebSocket, Messages, Feedback)
 export * from './conversationApi';
 export { default as conversationApi } from './conversationApi';
-export * from './chatApi';
-export { default as chatApi } from './chatApi';
 
 // 6. Export API Hồ Sơ Cá Nhân & Ứng Viên (Profile, Links)
 export * from './profileApi';
@@ -96,8 +95,8 @@ export * from './jobSpecializationApi';
 export { default as jobSpecializationApi } from './jobSpecializationApi';
 
 // 14. Export API Ứng tuyển (Applications)
-export * from './appicationApi';
-export { default as applicationApi } from './appicationApi';
+export * from './applicationApi';
+export { default as applicationApi } from './applicationApi';
 
 // 15. Export API Việc làm đã lưu (Saved Jobs)
 export * from './savedJobApi';
@@ -125,4 +124,17 @@ export { default as interviewApi } from './interviewApi';
 // 21. Export API Tìm kiếm CV bằng AI (CV Search)
 export * from './cvSearchApi';
 export { default as cvSearchApi } from './cvSearchApi';
+
+// 22. Export API Gợi ý việc làm & Gợi ý tìm kiếm (Job Recommendations & Search Suggestions)
+export * from './recommendationApi';
+export { default as recommendationApi } from './recommendationApi';
+
+// 23. Export API Đơn hàng đăng tin & Hạn mức (Job Posting Orders & Quota)
+export * from './jobPostingOrderApi';
+export { jobPostingOrderApi } from './jobPostingOrderApi';
+
+// 24. Export API Thông báo chuông hệ thống (Notifications)
+export * from './notificationApi';
+export { notificationApi } from './notificationApi';
+
 

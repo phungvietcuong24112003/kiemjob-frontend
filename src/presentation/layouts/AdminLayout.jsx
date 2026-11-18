@@ -1,6 +1,8 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { logout } from '../../infrastructure/api';
+import { USER } from '../../config/storageKeys';
+import { ROLES } from '../../domain/constants/roles';
 
 export default function AdminLayout() {
   const location = useLocation();
@@ -8,24 +10,24 @@ export default function AdminLayout() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [adminUser, setAdminUser] = useState(() => {
     try {
-      const rawUser = typeof localStorage !== 'undefined' ? localStorage.getItem('kiemjob_user') : null;
+      const rawUser = typeof localStorage !== 'undefined' ? localStorage.getItem(USER) : null;
       if (!rawUser) return null;
       const user = JSON.parse(rawUser);
-      return user.role === 'admin' ? user : null;
+      return user.role === ROLES.ADMIN ? user : null;
     } catch {
       return null;
     }
   });
 
   useEffect(() => {
-    const rawUser = localStorage.getItem('kiemjob_user');
+    const rawUser = localStorage.getItem(USER);
     if (!rawUser) {
       navigate('/admin/login', { replace: true });
       return;
     }
     try {
       const user = JSON.parse(rawUser);
-      if (user.role !== 'admin') {
+      if (user.role !== ROLES.ADMIN) {
         // Ứng viên hoặc tài khoản không có quyền Admin sẽ bị chuyển hướng ngay lập tức
         navigate('/', { replace: true });
         return;
@@ -46,8 +48,7 @@ export default function AdminLayout() {
     } catch (err) {
       console.warn('Logout error in admin:', err);
     }
-    localStorage.removeItem('kiemjob_user');
-    localStorage.removeItem('kiemjob_token');
+    localStorage.removeItem(USER);
     window.dispatchEvent(new Event('authChange'));
     navigate('/admin/login');
   };
@@ -110,7 +111,7 @@ export default function AdminLayout() {
                 AD
               </div>
               <span className="text-[12px] font-bold text-[#131b2e] hidden md:inline truncate max-w-[160px]">
-                {adminUser?.email || 'Admin'}
+                {adminUser?.email || ROLES.ADMIN}
               </span>
               <button
                 type="button"

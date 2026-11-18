@@ -1,15 +1,16 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { login } from '../../../infrastructure/api';
 import { setCookie } from '../../../infrastructure/utils/cookieUtils';
+import { USER } from '../../../config/storageKeys';
+import { ROLES } from '../../../domain/constants/roles';
 
 /**
  * Trang Đăng Nhập Quản Trị Viên (Admin Portal Login)
- * Tài khoản mặc định: admin@kiemjob.com / Cuongphung2411.
  */
 export default function AdminLoginPage() {
-  const [email, setEmail] = useState('admin@kiemjob.com');
-  const [password, setPassword] = useState('Cuongphung2411.');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
   const [loading, setLoading] = useState(false);
@@ -40,23 +41,21 @@ export default function AdminLoginPage() {
       const account = data.account || data || {};
 
       // Xác minh vai trò tài khoản: Chỉ chấp nhận quyền 'admin'
-      if (account.role !== 'admin') {
-        localStorage.removeItem('kiemjob_user');
-        localStorage.removeItem('kiemjob_token');
+      if (account.role !== ROLES.ADMIN) {
+        localStorage.removeItem(USER);
         throw new Error('Tài khoản này không có quyền truy cập hệ thống Quản trị viên (Admin)!');
       }
 
       const adminUser = {
         id: account.id,
         email: account.email || email.trim(),
-        role: 'admin',
+        role: ROLES.ADMIN,
         fullName: account.fullName || account.fullname || 'Quản trị viên KiemJob',
         avatar: account.avatarUrl || ''
       };
 
       setCookie('logged_in', 'true', rememberMe ? 14 : 1);
-      localStorage.setItem('kiemjob_user', JSON.stringify(adminUser));
-      localStorage.removeItem('kiemjob_token');
+      localStorage.setItem(USER, JSON.stringify(adminUser));
 
       window.dispatchEvent(new Event('authChange'));
 
@@ -67,12 +66,6 @@ export default function AdminLoginPage() {
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleFillCredentials = () => {
-    setEmail('admin@kiemjob.com');
-    setPassword('Cuongphung2411.');
-    setErrorMessage('');
   };
 
   return (
@@ -111,21 +104,6 @@ export default function AdminLoginPage() {
             </span>
           </div>
 
-          {/* Quick Fill Preset Box */}
-          <div className="mb-5 p-3 rounded-2xl bg-slate-800/60 border border-slate-700/60 flex items-center justify-between gap-3 text-xs">
-            <div className="min-w-0">
-              <span className="text-[11px] font-semibold text-slate-300 block">Tài khoản quản trị được cấp:</span>
-              <span className="text-[11px] text-emerald-400 font-mono truncate block mt-0.5">admin@kiemjob.com</span>
-            </div>
-            <button
-              type="button"
-              onClick={handleFillCredentials}
-              className="px-2.5 py-1 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 text-[11px] font-bold border border-emerald-500/30 transition-colors whitespace-nowrap cursor-pointer shrink-0"
-            >
-              Điền nhanh
-            </button>
-          </div>
-
           {/* Error Message */}
           {errorMessage && (
             <div className="mb-5 p-3.5 rounded-xl bg-red-900/30 border border-red-500/40 text-red-200 text-xs flex items-start gap-2.5">
@@ -148,7 +126,7 @@ export default function AdminLoginPage() {
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="admin@kiemjob.com"
+                  placeholder="Email quản trị"
                   required
                   className="w-full bg-slate-800/80 border border-slate-700 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-[#005c55] focus:ring-1 focus:ring-[#005c55] transition-all"
                 />
@@ -169,13 +147,12 @@ export default function AdminLoginPage() {
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••••••"
                   required
-                  className="w-full bg-slate-800/80 border border-slate-700 rounded-xl pl-10 pr-10 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-[#005c55] focus:ring-1 focus:ring-[#005c55] transition-all"
+                  className="w-full bg-slate-800/80 border border-slate-700 rounded-xl pl-10 pr-11 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-[#005c55] focus:ring-1 focus:ring-[#005c55] transition-all"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 text-slate-400 hover:text-slate-200 transition-colors p-1"
-                  aria-label={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
+                  className="absolute right-3.5 text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
                 >
                   <span className="material-symbols-outlined text-[18px]">
                     {showPassword ? 'visibility_off' : 'visibility'}
@@ -184,59 +161,62 @@ export default function AdminLoginPage() {
               </div>
             </div>
 
-            <div className="flex items-center justify-between text-xs pt-1">
-              <label className="flex items-center gap-2 cursor-pointer select-none text-slate-300">
+            <div className="flex items-center justify-between pt-1">
+              <label className="flex items-center gap-2 cursor-pointer select-none">
                 <input
                   type="checkbox"
                   checked={rememberMe}
                   onChange={(e) => setRememberMe(e.target.checked)}
-                  className="w-4 h-4 rounded bg-slate-800 border-slate-700 text-[#005c55] focus:ring-0 focus:ring-offset-0 cursor-pointer"
+                  className="w-4 h-4 rounded border-slate-700 bg-slate-800 text-[#005c55] focus:ring-0 focus:ring-offset-0 transition-colors"
                 />
-                <span>Duy trì đăng nhập an toàn</span>
+                <span className="text-xs text-slate-400 font-medium">Ghi nhớ phiên đăng nhập</span>
               </label>
+              <Link
+                to="/forgot-password"
+                className="text-xs text-emerald-400 hover:text-emerald-300 font-medium transition-colors"
+              >
+                Quên mật khẩu?
+              </Link>
             </div>
 
             <button
               type="submit"
               disabled={loading}
-              className="w-full mt-2 py-3 px-4 rounded-xl bg-gradient-to-r from-[#005c55] via-[#0f766e] to-[#008060] hover:from-[#007952] hover:to-[#005c55] text-white font-bold text-sm shadow-lg shadow-[#005c55]/30 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer active:scale-[0.98]"
+              className="w-full mt-2 py-3 px-4 rounded-xl bg-gradient-to-r from-[#005c55] to-[#007a70] hover:from-[#006e66] hover:to-[#008f83] text-white font-bold text-sm shadow-lg shadow-[#005c55]/30 active:scale-[0.99] transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
               {loading ? (
                 <>
-                  <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  <span className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
                   <span>Đang xác thực hệ thống...</span>
                 </>
               ) : (
                 <>
-                  <span className="material-symbols-outlined text-[18px]">login</span>
-                  <span>Đăng Nhập Quản Trị</span>
+                  <span>Đăng nhập hệ thống</span>
+                  <span className="material-symbols-outlined text-[18px]">arrow_forward</span>
                 </>
               )}
             </button>
           </form>
 
-          {/* Security details footer */}
-          <div className="mt-6 pt-4 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-500">
-            <span className="flex items-center gap-1">
-              <span className="material-symbols-outlined text-[14px] text-emerald-500">verified_user</span>
-              Bảo mật 256-bit SSL
-            </span>
-            <span>Phiên bản v2.4 Admin</span>
+          {/* Footer note inside card */}
+          <div className="mt-6 pt-4 border-t border-slate-800/80 text-center">
+            <p className="text-[11px] text-slate-500">
+              Cổng bảo mật cấp độ doanh nghiệp KiemJob. Mọi hành vi truy cập trái phép đều được ghi lại trong nhật ký giám sát hệ thống.
+            </p>
           </div>
         </div>
 
-        {/* Back to Portal Link */}
+        {/* Back to public link */}
         <div className="text-center mt-6">
           <Link
             to="/"
             className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-white transition-colors"
           >
             <span className="material-symbols-outlined text-[16px]">arrow_back</span>
-            <span>Quay lại trang chủ KiemJob</span>
+            <span>Quay lại trang chủ người tìm việc</span>
           </Link>
         </div>
       </div>
     </div>
   );
 }
-

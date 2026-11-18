@@ -5,9 +5,13 @@ import jobPostApi from '../../../infrastructure/api/jobPostApi';
 import { jobCategoryApi } from '../../../infrastructure/api/jobCategoryApi';
 import { profileApi } from '../../../infrastructure/api/profileApi';
 import { getCvs } from '../../../infrastructure/api/cvApi';
-import { applicationApi } from '../../../infrastructure/api/appicationApi';
+import { applicationApi } from '../../../infrastructure/api/applicationApi';
 import { savedJobApi } from '../../../infrastructure/api/savedJobApi';
+import { recommendationApi } from '../../../infrastructure/api/recommendationApi';
 import { hasAuthCookie } from '../../../infrastructure/utils/cookieUtils';
+import SearchSuggestionDropdown from '../../components/common/SearchSuggestionDropdown';
+import { saveLocalSearchKeyword } from '../../../infrastructure/utils/searchHistoryUtils';
+
 
 // Chuẩn hóa mức lương về đơn vị triệu VND
 export const normalizeSalaryToMillion = (val) => {
@@ -123,7 +127,7 @@ const mapJobPost = (item) => {
         ? item.company?.logoUrl ?? item.company?.logo_url ?? null
         : null),
     categoryId: categoryId != null ? String(categoryId) : null,
-    categoryName: categoryName || 'Công nghệ & Kinh doanh',
+    categoryName: categoryName || 'Chưa phân loại',
     salary: salaryDisplay,
     salary_min: salaryMin,
     salary_max: salaryMax,
@@ -137,7 +141,7 @@ const mapJobPost = (item) => {
       item.minExperienceYears ?? item.min_experience_years ?? 0,
     deadlineText: remainingDaysText,
     description: item.description ?? item.detailJob ?? item.detail_job ?? '',
-    location: item.location ?? 'TP. Hồ Chí Minh',
+    location: item.location ?? 'Chưa cập nhật',
     job_skills: Array.isArray(item.jobSkills) && item.jobSkills.length > 0
       ? item.jobSkills
       : Array.isArray(item.job_skills) && item.job_skills.length > 0
@@ -156,14 +160,12 @@ export default function JobListPage() {
   // Search input & selected filter states
   const [keyword, setKeyword] = useState(() => searchParams.get('q') || '');
   const [debouncedKeyword, setDebouncedKeyword] = useState(() => searchParams.get('q') || '');
+  const [showSearchDropdown, setShowSearchDropdown] = useState(false);
   const [sort, setSort] = useState(() => searchParams.get('sort') || 'newest');
+
   const [selectedSalaries, setSelectedSalaries] = useState(() => {
     const s = searchParams.get('salary');
     return s ? [s] : [];
-  });
-  const [selectedLevels, setSelectedLevels] = useState(() => {
-    const l = searchParams.get('level');
-    return l ? [l] : [];
   });
   const [selectedWorkTypes, setSelectedWorkTypes] = useState(() => {
     const t = searchParams.get('workType') || searchParams.get('workingMode');
@@ -173,7 +175,11 @@ export default function JobListPage() {
     const loc = searchParams.get('location');
     return loc ? [loc] : [];
   });
-  const [selectedPerks, setSelectedPerks] = useState([]);
+  const [selectedCategory, setSelectedCategory] = useState(() => {
+    return searchParams.get('categoryId') || '';
+  });
+  const [categories, setCategories] = useState([]);
+  const [locationSearch, setLocationSearch] = useState('');
   const [quickFilter, setQuickFilter] = useState('');
   const [itemsPerPage, setItemsPerPage] = useState(15);
   const [currentPage, setCurrentPage] = useState(() => {
@@ -223,6 +229,13 @@ export default function JobListPage() {
   useEffect(() => {
     provinceApi.getProvinces()
       .then((data) => setProvinces(Array.isArray(data) ? data : []))
+      .catch(() => {});
+  }, []);
+
+  // Load categories on mount
+  useEffect(() => {
+    jobCategoryApi.getCategories()
+      .then((data) => setCategories(Array.isArray(data) ? data : []))
       .catch(() => {});
   }, []);
 
@@ -290,32 +303,23 @@ export default function JobListPage() {
 
         const { salaryMin, salaryMax } = getSalaryRange(selectedSalaries);
 
+        // Working mode: gửi trực tiếp giá trị đã chọn (onsite, hybrid, remote)
         let workingMode = searchParams.get('workingMode') || null;
         if (!workingMode && selectedWorkTypes.length > 0) {
-          if (selectedWorkTypes.includes('remote') && !selectedWorkTypes.includes('hybrid') && !selectedWorkTypes.includes('full_time')) {
-            workingMode = 'remote';
-          } else if (selectedWorkTypes.includes('hybrid') && !selectedWorkTypes.includes('remote')) {
-            workingMode = 'hybrid';
-          } else if ((selectedWorkTypes.includes('full_time') || selectedWorkTypes.includes('part_time')) && !selectedWorkTypes.includes('remote') && !selectedWorkTypes.includes('hybrid')) {
-            workingMode = 'onsite';
+          // Chỉ gửi nếu chọn đúng 1, nhiều hơn thì bỏ qua (backend chưa hỗ trợ multi)
+          if (selectedWorkTypes.length === 1) {
+            workingMode = selectedWorkTypes[0];
           }
         }
 
+        // Province: gửi trực tiếp ID đã chọn
         let provinceId = searchParams.get('provinceId') || null;
         if (!provinceId && selectedLocations.length > 0) {
-          if (selectedLocations.includes('hcm')) {
-            const hcm = provinces.find((p) => (p.name || '').toLowerCase().includes('hồ chí minh') || (p.name || '').toLowerCase().includes('hcm'));
-            if (hcm) provinceId = hcm.id;
-          } else if (selectedLocations.includes('hn')) {
-            const hn = provinces.find((p) => (p.name || '').toLowerCase().includes('hà nội'));
-            if (hn) provinceId = hn.id;
-          } else if (selectedLocations.includes('dn')) {
-            const dn = provinces.find((p) => (p.name || '').toLowerCase().includes('đà nẵng'));
-            if (dn) provinceId = dn.id;
-          }
+          // Lấy ID đầu tiên được chọn (backend chưa hỗ trợ multi-province)
+          provinceId = selectedLocations[0];
         }
 
-        const categoryId = searchParams.get('categoryId') || searchParams.get('category') || null;
+        const categoryId = selectedCategory || searchParams.get('categoryId') || searchParams.get('category') || null;
         const specializationId = searchParams.get('specializationId') || null;
 
         const params = {
@@ -368,6 +372,7 @@ export default function JobListPage() {
     selectedSalaries,
     selectedWorkTypes,
     selectedLocations,
+    selectedCategory,
     provinces,
     sort,
     currentPage,
@@ -482,10 +487,10 @@ export default function JobListPage() {
     setKeyword('');
     setDebouncedKeyword('');
     setSelectedSalaries([]);
-    setSelectedLevels([]);
     setSelectedWorkTypes([]);
     setSelectedLocations([]);
-    setSelectedPerks([]);
+    setSelectedCategory('');
+    setLocationSearch('');
     setQuickFilter('');
     setSort('newest');
     setSearchParams({}, { replace: true });
@@ -502,13 +507,6 @@ export default function JobListPage() {
     setCurrentPage(1);
   };
 
-  const toggleLevel = (val) => {
-    setSelectedLevels((prev) =>
-      prev.includes(val) ? prev.filter((l) => l !== val) : [...prev, val]
-    );
-    setCurrentPage(1);
-  };
-
   const toggleWorkType = (val) => {
     setSelectedWorkTypes((prev) => {
       const next = prev.includes(val) ? prev.filter((w) => w !== val) : [...prev, val];
@@ -518,19 +516,22 @@ export default function JobListPage() {
     setCurrentPage(1);
   };
 
-  const toggleLocation = (val) => {
+  const toggleLocation = (provinceIdVal) => {
     setSelectedLocations((prev) => {
-      const next = prev.includes(val) ? prev.filter((loc) => loc !== val) : [...prev, val];
+      const strVal = String(provinceIdVal);
+      const next = prev.includes(strVal) ? prev.filter((loc) => loc !== strVal) : [strVal]; // single-select vì backend chỉ nhận 1 provinceId
       updateUrlParam('location', next.join(','));
       return next;
     });
     setCurrentPage(1);
   };
 
-  const togglePerk = (val) => {
-    setSelectedPerks((prev) =>
-      prev.includes(val) ? prev.filter((p) => p !== val) : [...prev, val]
-    );
+  // Category select handler
+  const handleCategoryChange = (catId) => {
+    const val = selectedCategory === String(catId) ? '' : String(catId);
+    setSelectedCategory(val);
+    updateUrlParam('categoryId', val);
+    setCurrentPage(1);
   };
 
   // Count active filters
@@ -538,36 +539,16 @@ export default function JobListPage() {
     let count = 0;
     if (keyword.trim()) count++;
     count += selectedSalaries.length;
-    count += selectedLevels.length;
     count += selectedWorkTypes.length;
     count += selectedLocations.length;
-    count += selectedPerks.length;
+    if (selectedCategory) count++;
     if (quickFilter) count++;
     if (sort && sort !== 'newest') count++;
     return count;
-  }, [keyword, selectedSalaries, selectedLevels, selectedWorkTypes, selectedLocations, selectedPerks, quickFilter, sort]);
+  }, [keyword, selectedSalaries, selectedWorkTypes, selectedLocations, selectedCategory, quickFilter, sort]);
 
-  // Displayed jobs for current page
-  const displayedJobs = useMemo(() => {
-    let result = jobs;
-
-    // Cấp bậc nếu có chọn lọc phụ
-    if (selectedLevels.length > 0) {
-      result = result.filter((j) => {
-        const exp = Number(j.min_experience_years || 0);
-        return selectedLevels.some((lvl) => {
-          if (lvl === 'fresher') return exp <= 1;
-          if (lvl === 'junior-middle') return exp >= 1 && exp <= 3;
-          if (lvl === 'senior') return exp >= 3 && exp <= 5;
-          if (lvl === 'manager') return exp >= 5 && exp <= 8;
-          if (lvl === 'director') return exp >= 8;
-          return true;
-        });
-      });
-    }
-
-    return result;
-  }, [jobs, selectedLevels]);
+  // Displayed jobs - trực tiếp từ server (server-side filtering)
+  const displayedJobs = useMemo(() => jobs, [jobs]);
 
   const handlePageChange = (newPage) => {
     const target = Math.max(1, Math.min(newPage, totalPages));
@@ -644,15 +625,21 @@ export default function JobListPage() {
               <span className="hover:text-primary transition-colors cursor-pointer">Tìm kiếm việc làm</span>
               <span className="material-symbols-outlined text-[14px] text-outline">chevron_right</span>
               <span className="text-on-surface font-semibold bg-surface-container-high px-space-xs py-0.5 rounded">
-                {totalElements} việc làm công nghệ &amp; kinh doanh phù hợp
+                {totalElements} việc làm phù hợp
               </span>
             </nav>
 
             {/* Advanced Composite Search Box */}
-            <div className="bg-surface-container-lowest rounded-xl p-space-xs md:p-space-sm shadow-[0_10px_25px_-4px_rgba(15,23,42,0.06),0_4px_10px_-2px_rgba(15,118,110,0.04)]">
+            <div className="bg-surface-container-lowest rounded-xl p-space-xs md:p-space-sm shadow-[0_10px_25px_-4px_rgba(15,23,42,0.06),0_4px_10px_-2px_rgba(15,118,110,0.04)] relative z-40">
               <form
+
                 onSubmit={(e) => {
                   e.preventDefault();
+                  setShowSearchDropdown(false);
+                  if (keyword.trim()) {
+                    recommendationApi.saveSearchKeyword(keyword.trim());
+                    saveLocalSearchKeyword(keyword.trim());
+                  }
                   updateUrlParam('q', keyword);
                 }}
                 className="flex flex-col lg:flex-row items-stretch lg:items-center bg-surface-container-lowest rounded-xl md:rounded-full p-1.5 md:p-2 shadow-[0_4px_20px_-2px_rgba(15,23,42,0.08)] gap-1"
@@ -663,7 +650,11 @@ export default function JobListPage() {
                     id="search-keyword"
                     type="text"
                     value={keyword}
-                    onChange={(e) => setKeyword(e.target.value)}
+                    onFocus={() => setShowSearchDropdown(true)}
+                    onChange={(e) => {
+                      setKeyword(e.target.value);
+                      setShowSearchDropdown(true);
+                    }}
                     placeholder="Tìm kiếm vị trí, kỹ năng, công ty..."
                     className="w-full bg-transparent font-body-md text-body-md text-on-surface placeholder:text-outline focus:outline-none"
                   />
@@ -672,6 +663,7 @@ export default function JobListPage() {
                       type="button"
                       onClick={() => {
                         setKeyword('');
+                        setShowSearchDropdown(false);
                         updateUrlParam('q', '');
                       }}
                       title="Xóa từ khóa"
@@ -690,6 +682,19 @@ export default function JobListPage() {
                   <span>Tìm kiếm</span>
                 </button>
               </form>
+
+              <SearchSuggestionDropdown
+                isOpen={showSearchDropdown}
+                onClose={() => setShowSearchDropdown(false)}
+                query={keyword}
+                onSelect={(selected) => {
+                  setKeyword(selected);
+                  setShowSearchDropdown(false);
+                  recommendationApi.saveSearchKeyword(selected);
+                  saveLocalSearchKeyword(selected);
+                  updateUrlParam('q', selected);
+                }}
+              />
             </div>
 
             {/* Quick Filter Tags */}
@@ -880,17 +885,17 @@ export default function JobListPage() {
                     {/* Salary Checkboxes */}
                     <div className="flex flex-col gap-2 pt-1 font-body-md text-body-md text-on-surface">
                       {[
-                        { id: 'under-10', label: 'Dưới 10 triệu', count: '120' },
-                        { id: '10-20', label: '10 – 20 triệu', count: '380' },
-                        { id: '20-35', label: '20 – 35 triệu', count: '450' },
-                        { id: '35-50', label: '35 – 50 triệu', count: '280' },
-                        { id: 'over-50', label: 'Trên 50 triệu / Thỏa thuận', count: '190' },
+                        { id: 'under-10', label: 'Dưới 10 triệu' },
+                        { id: '10-20', label: '10 – 20 triệu' },
+                        { id: '20-35', label: '20 – 35 triệu' },
+                        { id: '35-50', label: '35 – 50 triệu' },
+                        { id: 'over-50', label: 'Trên 50 triệu / Thỏa thuận' },
                       ].map((sal) => {
                         const isChecked = selectedSalaries.includes(sal.id);
                         return (
                           <label
                             key={sal.id}
-                            className={`flex items-center justify-between cursor-pointer group ${
+                            className={`flex items-center cursor-pointer group ${
                               isChecked ? 'font-semibold text-primary' : ''
                             }`}
                           >
@@ -905,67 +910,42 @@ export default function JobListPage() {
                                 {sal.label}
                               </span>
                             </div>
-                            <span
-                              className={`font-label-sm text-label-sm ${
-                                isChecked
-                                  ? 'bg-secondary-container text-on-secondary-container px-2 py-0.5 rounded-full font-bold'
-                                  : 'text-outline'
-                              }`}
-                            >
-                              {sal.count}
-                            </span>
                           </label>
                         );
                       })}
                     </div>
                   </div>
 
-                  {/* Group 2: Cấp Bậc & Kinh Nghiệm */}
+                  {/* Group 2: Danh Mục Ngành Nghề */}
                   <div className="flex flex-col gap-space-sm pt-space-xs">
                     <h3 className="font-label-lg text-label-lg font-bold text-on-surface flex items-center gap-1.5">
-                      <span className="material-symbols-outlined text-primary text-[18px]">military_tech</span>
-                      Cấp Bậc &amp; Kinh Nghiệm
+                      <span className="material-symbols-outlined text-primary text-[18px]">category</span>
+                      Danh Mục Ngành Nghề
                     </h3>
-                    <div className="flex flex-col gap-2 font-body-md text-body-md text-on-surface">
-                      {[
-                        { id: 'fresher', label: 'Thực tập sinh / Fresher', count: '165' },
-                        { id: 'junior-middle', label: 'Nhân viên (Junior – Middle)', count: '620' },
-                        { id: 'senior', label: 'Trưởng nhóm / Senior', count: '310' },
-                        { id: 'manager', label: 'Quản lý / Trưởng phòng', count: '210' },
-                        { id: 'director', label: 'Giám đốc & C-Level', count: '115' },
-                      ].map((lvl) => {
-                        const isChecked = selectedLevels.includes(lvl.id);
-                        return (
-                          <label
-                            key={lvl.id}
-                            className={`flex items-center justify-between cursor-pointer group ${
-                              isChecked ? 'font-semibold text-primary' : ''
-                            }`}
-                          >
-                            <div className="flex items-center gap-2">
-                              <input
-                                type="checkbox"
-                                checked={isChecked}
-                                onChange={() => toggleLevel(lvl.id)}
-                                className="w-4 h-4 rounded text-primary focus:ring-0 cursor-pointer accent-primary"
-                              />
-                              <span className={isChecked ? '' : 'group-hover:text-primary transition-colors'}>
-                                {lvl.label}
-                              </span>
-                            </div>
-                            <span
-                              className={`font-label-sm text-label-sm ${
-                                isChecked
-                                  ? 'bg-secondary-container text-on-secondary-container px-2 py-0.5 rounded-full font-bold'
-                                  : 'text-outline'
+                    {categories.length === 0 ? (
+                      <p className="text-on-surface-variant font-body-sm text-body-sm italic">Đang tải danh mục...</p>
+                    ) : (
+                      <div className="flex flex-col gap-1.5 font-body-md text-body-md text-on-surface max-h-[240px] overflow-y-auto pr-1">
+                        {categories.map((cat) => {
+                          const isSelected = selectedCategory === String(cat.id);
+                          return (
+                            <button
+                              key={cat.id}
+                              type="button"
+                              onClick={() => handleCategoryChange(cat.id)}
+                              className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-left transition-all cursor-pointer ${
+                                isSelected
+                                  ? 'bg-secondary-container text-on-secondary-container font-bold'
+                                  : 'hover:bg-surface-container text-on-surface-variant hover:text-primary'
                               }`}
                             >
-                              {lvl.count}
-                            </span>
-                          </label>
-                        );
-                      })}
-                    </div>
+                              {isSelected && <span className="material-symbols-outlined text-[16px]">check</span>}
+                              <span className="truncate">{cat.name}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
 
                   {/* Group 3: Hình Thức Làm Việc */}
@@ -976,10 +956,9 @@ export default function JobListPage() {
                     </h3>
                     <div className="grid grid-cols-2 gap-2">
                       {[
-                        { id: 'full_time', label: 'Full-time' },
-                        { id: 'part_time', label: 'Part-time' },
-                        { id: 'remote', label: 'Remote / WFH' },
-                        { id: 'hybrid', label: 'Hybrid' },
+                        { id: 'onsite', label: 'Tại văn phòng', icon: 'apartment' },
+                        { id: 'remote', label: 'Từ xa (Remote)', icon: 'home' },
+                        { id: 'hybrid', label: 'Hybrid', icon: 'sync_alt' },
                       ].map((item) => {
                         const isChecked = selectedWorkTypes.includes(item.id);
                         return (
@@ -1001,107 +980,94 @@ export default function JobListPage() {
                     </div>
                   </div>
 
-                  {/* Group 4: Địa Điểm & Thành Phố */}
+                  {/* Group 4: Địa Điểm & Thành Phố (Dynamic từ DB) */}
                   <div className="flex flex-col gap-space-sm pt-space-xs">
                     <h3 className="font-label-lg text-label-lg font-bold text-on-surface flex items-center gap-1.5">
                       <span className="material-symbols-outlined text-primary text-[18px]">location_city</span>
                       Địa Điểm &amp; Thành Phố
                     </h3>
-                    <div className="flex flex-col gap-2 font-body-md text-body-md text-on-surface">
-                      <label className="flex items-center justify-between cursor-pointer group">
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="checkbox"
-                            checked={selectedLocations.includes('hcm')}
-                            onChange={() => toggleLocation('hcm')}
-                            className="w-4 h-4 rounded text-primary focus:ring-0 cursor-pointer accent-primary"
-                          />
-                          <span className={selectedLocations.includes('hcm') ? 'font-semibold text-primary' : 'group-hover:text-primary transition-colors'}>
-                            TP. Hồ Chí Minh
-                          </span>
-                        </div>
-                        <span className="font-label-sm text-label-sm text-outline">740 việc</span>
-                      </label>
-                      <div className="pl-6 flex flex-col gap-1 text-on-surface-variant font-body-sm text-body-sm">
-                        <span className="hover:text-primary cursor-pointer">• Quận 1, Quận 7, Tân Bình, Thủ Đức</span>
-                      </div>
 
-                      <label className="flex items-center justify-between cursor-pointer group mt-1">
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="checkbox"
-                            checked={selectedLocations.includes('hn')}
-                            onChange={() => toggleLocation('hn')}
-                            className="w-4 h-4 rounded text-primary focus:ring-0 cursor-pointer accent-primary"
-                          />
-                          <span className={selectedLocations.includes('hn') ? 'font-semibold text-primary' : 'group-hover:text-primary transition-colors'}>
-                            Hà Nội
-                          </span>
-                        </div>
-                        <span className="font-label-sm text-label-sm text-outline">510 việc</span>
-                      </label>
-                      <div className="pl-6 flex flex-col gap-1 text-on-surface-variant font-body-sm text-body-sm">
-                        <span className="hover:text-primary cursor-pointer">• Cầu Giấy, Ba Đình, Hoàn Kiếm, Nam Từ Liêm</span>
-                      </div>
-
-                      <label className="flex items-center justify-between cursor-pointer group mt-1">
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="checkbox"
-                            checked={selectedLocations.includes('dn')}
-                            onChange={() => toggleLocation('dn')}
-                            className="w-4 h-4 rounded text-primary focus:ring-0 cursor-pointer accent-primary"
-                          />
-                          <span className={selectedLocations.includes('dn') ? 'font-semibold text-primary' : 'group-hover:text-primary transition-colors'}>
-                            Đà Nẵng &amp; Lân cận
-                          </span>
-                        </div>
-                        <span className="font-label-sm text-label-sm text-outline">120 việc</span>
-                      </label>
-
-                      <label className="flex items-center justify-between cursor-pointer group mt-1">
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="checkbox"
-                            checked={selectedLocations.includes('remote')}
-                            onChange={() => toggleLocation('remote')}
-                            className="w-4 h-4 rounded text-primary focus:ring-0 cursor-pointer accent-primary"
-                          />
-                          <span className={selectedLocations.includes('remote') ? 'font-semibold text-primary' : 'group-hover:text-primary transition-colors'}>
-                            Toàn cầu / Remote
-                          </span>
-                        </div>
-                        <span className="font-label-sm text-label-sm text-outline">50 việc</span>
-                      </label>
+                    {/* Search box for provinces */}
+                    <div className="relative">
+                      <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-[16px] text-outline">search</span>
+                      <input
+                        type="text"
+                        value={locationSearch}
+                        onChange={(e) => setLocationSearch(e.target.value)}
+                        placeholder="Tìm tỉnh / thành phố..."
+                        className="w-full pl-8 pr-3 py-2 bg-surface-container-lowest rounded-lg border border-surface-container focus:border-primary focus:ring-1 focus:ring-primary text-body-sm font-body-sm text-on-surface outline-none transition-all"
+                      />
+                      {locationSearch && (
+                        <button
+                          type="button"
+                          onClick={() => setLocationSearch('')}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 text-outline hover:text-on-surface cursor-pointer"
+                        >
+                          <span className="material-symbols-outlined text-[14px]">close</span>
+                        </button>
+                      )}
                     </div>
-                  </div>
 
-                  {/* Group 5: Đãi Ngộ & Phúc Lợi Cao Cấp */}
-                  <div className="flex flex-col gap-space-sm pt-space-xs">
-                    <h3 className="font-label-lg text-label-lg font-bold text-on-surface flex items-center gap-1.5">
-                      <span className="material-symbols-outlined text-primary text-[18px]">card_giftcard</span>
-                      Đãi Ngộ &amp; Phúc Lợi Cao Cấp
-                    </h3>
-                    <div className="flex flex-col gap-2 font-body-md text-body-md text-on-surface">
-                      {[
-                        { id: 'bonus', label: 'Thưởng lương tháng 13 & KPI' },
-                        { id: 'insurance', label: 'Bảo hiểm sức khỏe quốc tế (PVI/BaoViet)' },
-                        { id: 'macbook', label: 'Cung cấp MacBook Pro / Thiết bị xịn' },
-                        { id: 'training', label: 'Đào tạo chứng chỉ & Trợ cấp ngoại ngữ' },
-                      ].map((perk) => (
-                        <label key={perk.id} className="flex items-center gap-2.5 cursor-pointer group">
-                          <input
-                            type="checkbox"
-                            checked={selectedPerks.includes(perk.id)}
-                            onChange={() => togglePerk(perk.id)}
-                            className="w-4 h-4 rounded text-primary focus:ring-0 cursor-pointer accent-primary"
-                          />
-                          <span className={selectedPerks.includes(perk.id) ? 'font-semibold text-primary' : 'group-hover:text-primary transition-colors'}>
-                            {perk.label}
-                          </span>
-                        </label>
-                      ))}
+                    {/* Province list */}
+                    <div className="flex flex-col gap-1 font-body-md text-body-md text-on-surface max-h-[200px] overflow-y-auto pr-1">
+                      {provinces.length === 0 ? (
+                        <p className="text-on-surface-variant font-body-sm text-body-sm italic">Đang tải...</p>
+                      ) : (
+                        provinces
+                          .filter((p) => {
+                            if (!locationSearch.trim()) return true;
+                            return (p.name || '').toLowerCase().includes(locationSearch.trim().toLowerCase());
+                          })
+                          .map((province) => {
+                            const isChecked = selectedLocations.includes(String(province.id));
+                            return (
+                              <label
+                                key={province.id}
+                                className={`flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer transition-all ${
+                                  isChecked
+                                    ? 'bg-secondary-container/50 font-semibold text-primary'
+                                    : 'hover:bg-surface-container group'
+                                }`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={() => toggleLocation(province.id)}
+                                  className="w-4 h-4 rounded text-primary focus:ring-0 cursor-pointer accent-primary"
+                                />
+                                <span className={isChecked ? '' : 'group-hover:text-primary transition-colors'}>
+                                  {province.name}
+                                </span>
+                              </label>
+                            );
+                          })
+                      )}
+                      {provinces.length > 0 && locationSearch.trim() && provinces.filter((p) => (p.name || '').toLowerCase().includes(locationSearch.trim().toLowerCase())).length === 0 && (
+                        <p className="text-on-surface-variant font-body-sm text-body-sm italic py-2 text-center">
+                          Không tìm thấy tỉnh/thành phố "{locationSearch}"
+                        </p>
+                      )}
                     </div>
+
+                    {/* Show currently selected province */}
+                    {selectedLocations.length > 0 && (
+                      <div className="flex items-center gap-1.5 text-primary font-label-sm text-label-sm">
+                        <span className="material-symbols-outlined text-[14px]">check_circle</span>
+                        <span>
+                          Đang lọc: {provinces.find((p) => String(p.id) === selectedLocations[0])?.name || 'Đã chọn'}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedLocations([]);
+                            updateUrlParam('location', '');
+                          }}
+                          className="ml-auto text-outline hover:text-error cursor-pointer"
+                        >
+                          <span className="material-symbols-outlined text-[14px]">close</span>
+                        </button>
+                      </div>
+                    )}
                   </div>
 
                 </div>
@@ -1289,10 +1255,17 @@ export default function JobListPage() {
                               </div>
 
                               <h3 className="text-[16px] font-bold text-on-surface group-hover:text-primary transition-colors truncate whitespace-nowrap">
-                                <Link to={`/jobs/${job.id}`} className="hover:underline">
+                                <Link
+                                  to={`/jobs/${job.id}`}
+                                  onClick={() => {
+                                    recommendationApi.recordInteraction({ jobId: job.id, actionType: 'SEARCH_CLICK' });
+                                  }}
+                                  className="hover:underline"
+                                >
                                   {job.title}
                                 </Link>
                               </h3>
+
 
                               <div className="flex items-center gap-space-xs text-on-surface-variant font-body-sm text-body-sm mt-0.5 flex-wrap">
                                 <span className="font-bold text-on-surface flex items-center gap-1">

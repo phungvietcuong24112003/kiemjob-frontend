@@ -1,4 +1,6 @@
-import { apiClient } from './client';
+﻿import { apiClient } from './client';
+import { USER } from '../../config/storageKeys';
+import { ROLES } from '../../domain/constants/roles';
 
 export const jobPostApi = {
   /**
@@ -40,9 +42,9 @@ export const jobPostApi = {
   createJobPost: async (jobPostData) => {
     const payload = { ...jobPostData };
     try {
-      const stored = localStorage.getItem('kiemjob_user');
+      const stored = localStorage.getItem(USER);
       const user = stored ? JSON.parse(stored) : null;
-      if (user?.role !== 'admin') {
+      if (user?.role !== ROLES.ADMIN) {
         delete payload.companyId;
         delete payload.postedById;
       }

@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { adminApi, companyApi } from '../../../infrastructure/api';
+import { ROLES } from '../../../domain/constants/roles';
 
 export default function AdminOverviewPage() {
   const [stats, setStats] = useState(null);
@@ -284,9 +285,9 @@ export default function AdminOverviewPage() {
                   </div>
                 </div>
                 <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] uppercase whitespace-nowrap ml-2 ${
-                  acc.role === 'admin'
+                  acc.role === ROLES.ADMIN
                     ? 'bg-[#ffdad6] text-[#ba1a1a]'
-                    : acc.role === 'recruiter'
+                    : acc.role === ROLES.RECRUITER
                     ? 'bg-[#97f5cc]/60 text-[#00513a]'
                     : 'bg-[#e2e7ff] text-[#0039a6]'
                 }`}>

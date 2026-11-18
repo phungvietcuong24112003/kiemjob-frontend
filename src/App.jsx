@@ -91,6 +91,8 @@ export default function App() {
           <Route path="/career-guide" element={<CareerGuidePage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
+          <Route path="/recruiter/login" element={<RecruiterLoginPage />} />
+          <Route path="/recruiter/register" element={<RecruiterRegisterPage />} />
         </Route>
 
         {/* Shared Forgot Password Route (Standalone Card - No Portal Header/Footer) */}
@@ -101,9 +103,7 @@ export default function App() {
         <Route path="/payment/result" element={<PaymentResultPage />} />
         <Route path="/payment/success" element={<PaymentResultPage />} />
 
-        {/* Recruiter Auth Routes */}
-        <Route path="/recruiter/login" element={<RecruiterLoginPage />} />
-        <Route path="/recruiter/register" element={<RecruiterRegisterPage />} />
+        {/* Recruiter Onboarding Routes */}
         <Route path="/recruiter/first-company-info" element={<FirstCompanyInfoPage />} />
         <Route path="/recruiter/onboarding" element={<FirstCompanyInfoPage />} />
 

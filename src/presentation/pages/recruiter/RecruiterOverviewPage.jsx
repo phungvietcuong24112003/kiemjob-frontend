@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { getRecruiterProfile, getJobPosts } from '../../../infrastructure/api';
+import { USER } from '../../../config/storageKeys';
 
 export default function RecruiterOverviewPage() {
   const [profile, setProfile] = useState(null);
@@ -36,7 +37,7 @@ export default function RecruiterOverviewPage() {
       } catch (err) {
         console.warn('Lỗi lấy thông tin tổng quan:', err);
         try {
-          const stored = localStorage.getItem('kiemjob_user');
+          const stored = localStorage.getItem(USER);
           if (stored) setProfile(JSON.parse(stored));
         } catch {}
       } finally {

@@ -4,10 +4,6 @@ import { hasAuthCookie } from '../../../infrastructure/utils/cookieUtils';
 import { savedJobApi } from '../../../infrastructure/api/savedJobApi';
 
 export default function JobSavePage() {
-  if (!hasAuthCookie()) {
-    return <Navigate to="/login" replace />;
-  }
-
   const [savedJobs, setSavedJobs] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [toastMsg, setToastMsg] = useState('');
@@ -61,6 +57,7 @@ export default function JobSavePage() {
   }, []);
 
   useEffect(() => {
+    if (!hasAuthCookie()) return;
     loadSavedJobs();
   }, [loadSavedJobs]);
 
@@ -91,6 +88,10 @@ export default function JobSavePage() {
     const set = new Set(savedJobs.map((j) => j.company).filter(Boolean));
     return set.size;
   }, [savedJobs]);
+
+  if (!hasAuthCookie()) {
+    return <Navigate to="/login" replace />;
+  }
 
   return (
     <div className="w-full bg-[#faf8ff] min-h-screen pb-16">

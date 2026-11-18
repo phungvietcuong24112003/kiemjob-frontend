@@ -3,9 +3,48 @@ import { Outlet, Link, useLocation, Navigate, useNavigate } from 'react-router-d
 import { logout } from '../../infrastructure/api';
 import { hasAuthCookie } from '../../infrastructure/utils/cookieUtils';
 import { RecruiterChatProvider } from '../../application/context/RecruiterChatContext';
+import { NotificationProvider, useNotification } from '../../application/context/NotificationContext';
 import RecruiterChatDropdown from '../components/recruiter/RecruiterChatDropdown';
+import NotificationDropdown from '../components/notification/NotificationDropdown';
+import NotificationToast from '../components/notification/NotificationToast';
 import RecruiterFloatingChat from '../components/recruiter/RecruiterFloatingChat';
 import RecruiterFeedbackModal from '../components/recruiter/RecruiterFeedbackModal';
+import { USER } from '../../config/storageKeys';
+import { ROLES } from '../../domain/constants/roles';
+
+function RecruiterNotificationBell() {
+  const [isOpen, setIsOpen] = useState(false);
+  const { unreadCount } = useNotification();
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className={`relative p-2 rounded-xl transition-all flex items-center justify-center cursor-pointer ${
+          isOpen
+            ? 'bg-[#005c55] text-white shadow-md'
+            : 'text-slate-600 hover:bg-slate-100 hover:text-[#005c55]'
+        }`}
+        title="Thông báo hệ thống"
+      >
+        <span className="material-symbols-outlined text-[20px]">notifications</span>
+        {unreadCount > 0 && (
+          <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center border-2 border-white shadow-xs">
+            {unreadCount > 99 ? '99+' : unreadCount}
+          </span>
+        )}
+      </button>
+
+      {isOpen && (
+        <NotificationDropdown
+          onClose={() => setIsOpen(false)}
+          userRole="recruiter"
+        />
+      )}
+    </div>
+  );
+}
 
 export default function RecruiterLayout() {
   const location = useLocation();
@@ -14,12 +53,11 @@ export default function RecruiterLayout() {
   const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
   const [currentUser, setCurrentUser] = useState(() => {
     if (!hasAuthCookie()) {
-      localStorage.removeItem('kiemjob_user');
-      localStorage.removeItem('kiemjob_token');
+      localStorage.removeItem(USER);
       return null;
     }
     try {
-      const stored = localStorage.getItem('kiemjob_user');
+      const stored = localStorage.getItem(USER);
       return stored ? JSON.parse(stored) : null;
     } catch {
       return null;
@@ -29,13 +67,12 @@ export default function RecruiterLayout() {
   useEffect(() => {
     const handleAuth = () => {
       if (!hasAuthCookie()) {
-        localStorage.removeItem('kiemjob_user');
-        localStorage.removeItem('kiemjob_token');
+        localStorage.removeItem(USER);
         setCurrentUser(null);
         return;
       }
       try {
-        const stored = localStorage.getItem('kiemjob_user');
+        const stored = localStorage.getItem(USER);
         setCurrentUser(stored ? JSON.parse(stored) : null);
       } catch {
         setCurrentUser(null);
@@ -62,12 +99,12 @@ export default function RecruiterLayout() {
   );
 
   // Nếu là nhà tuyển dụng nhưng thuộc tính công ty là null -> Chuyển về trang điền thông tin lần đầu
-  if (currentUser && currentUser.role === 'recruiter' && !hasCompany) {
+  if (currentUser && currentUser.role === ROLES.RECRUITER && !hasCompany) {
     return <Navigate to="/recruiter/first-company-info" replace />;
   }
 
   // Nếu chưa đăng nhập hoặc không phải nhà tuyển dụng -> Chuyển hướng đăng nhập
-  if (!currentUser || (currentUser.role !== 'recruiter' && currentUser.role !== 'admin')) {
+  if (!currentUser || (currentUser.role !== ROLES.RECRUITER && currentUser.role !== ROLES.ADMIN)) {
     return <Navigate to="/recruiter/login" replace />;
   }
 
@@ -103,36 +140,40 @@ export default function RecruiterLayout() {
   ];
 
   return (
-    <RecruiterChatProvider>
-      <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-['Plus_Jakarta_Sans',sans-serif]">
-        {/* Top Header for Recruiter */}
-        <header className="fixed top-0 left-0 right-0 h-15 z-50 bg-white border-b border-slate-200 shadow-[0_1px_3px_rgba(0,0,0,0.03)]">
-          <div className="h-15 w-full px-4 sm:px-6 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-                className="lg:hidden p-1.5 text-slate-600 hover:bg-slate-100 rounded-lg cursor-pointer"
-              >
-                <span className="material-symbols-outlined text-[22px]">menu</span>
-              </button>
+    <NotificationProvider>
+      <RecruiterChatProvider>
+        <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-['Plus_Jakarta_Sans',sans-serif]">
+          {/* Top Header for Recruiter */}
+          <header className="fixed top-0 left-0 right-0 h-15 z-50 bg-white border-b border-slate-200 shadow-[0_1px_3px_rgba(0,0,0,0.03)]">
+            <div className="h-15 w-full px-4 sm:px-6 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+                  className="lg:hidden p-1.5 text-slate-600 hover:bg-slate-100 rounded-lg cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-[22px]">menu</span>
+                </button>
 
-              <Link to="/recruiter" className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-[#005c55] flex items-center justify-center text-white shadow-xs">
-                  <span className="material-symbols-outlined text-[20px]">corporate_fare</span>
-                </div>
-                <div className="flex flex-col">
-                  <span className="font-bold text-base text-[#005c55] leading-none">KiemJob</span>
-                  <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Cổng Tuyển Dụng</span>
-                </div>
-              </Link>
-            </div>
+                <Link to="/recruiter" className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-[#005c55] flex items-center justify-center text-white shadow-xs">
+                    <span className="material-symbols-outlined text-[20px]">corporate_fare</span>
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="font-bold text-base text-[#005c55] leading-none">KiemJob</span>
+                    <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Cổng Tuyển Dụng</span>
+                  </div>
+                </Link>
+              </div>
 
-            <div className="flex items-center gap-2.5">
-              {/* Facebook Messenger-style Chat Dropdown */}
-              <RecruiterChatDropdown />
+              <div className="flex items-center gap-2.5">
+                {/* System Notifications Bell */}
+                <RecruiterNotificationBell />
 
-              {/* Feedback Button */}
+                {/* Facebook Messenger-style Chat Dropdown */}
+                <RecruiterChatDropdown />
+
+                {/* Feedback Button */}
               <button
                 type="button"
                 onClick={() => setIsFeedbackOpen(true)}
@@ -317,7 +358,11 @@ export default function RecruiterLayout() {
           onClose={() => setIsFeedbackOpen(false)}
           currentUser={currentUser}
         />
+
+        {/* Realtime Notification Toast */}
+        <NotificationToast userRole="recruiter" />
       </div>
     </RecruiterChatProvider>
+  </NotificationProvider>
   );
 }

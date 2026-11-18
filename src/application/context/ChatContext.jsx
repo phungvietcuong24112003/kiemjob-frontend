@@ -2,6 +2,13 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import { conversationApi } from '../../infrastructure/api/conversationApi';
 import { webSocketService } from '../../infrastructure/websocket/WebSocketService';
 import { hasAuthCookie } from '../../infrastructure/utils/cookieUtils';
+import { USER } from '../../config/storageKeys';
+import { ROLES } from '../../domain/constants/roles';
+import {
+  getNotificationPermission,
+  showChatNotification,
+  handleEnableNotifications,
+} from '../../infrastructure/utils/notificationUtils';
 
 const ChatContext = createContext(null);
 
@@ -47,6 +54,14 @@ export function ChatProvider({ children }) {
   const [messages, setMessages] = useState([]);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [wsConnected, setWsConnected] = useState(false);
+  const [notificationPermission, setNotificationPermission] = useState(() =>
+    getNotificationPermission()
+  );
+
+  const enableNotifications = useCallback(async () => {
+    return handleEnableNotifications(setNotificationPermission);
+  }, []);
+
 
   // Dọn dẹp cache tin nhắn cũ trong localStorage nếu có
   useEffect(() => {
@@ -58,7 +73,7 @@ export function ChatProvider({ children }) {
           }
         });
       }
-    } catch {}
+    } catch { }
   }, []);
 
   // Sync user from localStorage if cookie exists
@@ -66,17 +81,26 @@ export function ChatProvider({ children }) {
     if (!hasAuthCookie()) {
       setCurrentUser(null);
       setConversations([]);
+      try {
+        webSocketService.disconnect();
+      } catch {}
       return;
     }
     try {
-      const stored = localStorage.getItem('kiemjob_user');
+      const stored = localStorage.getItem(USER);
       if (stored) {
         setCurrentUser(JSON.parse(stored));
       } else {
         setCurrentUser(null);
+        try {
+          webSocketService.disconnect();
+        } catch {}
       }
     } catch {
       setCurrentUser(null);
+      try {
+        webSocketService.disconnect();
+      } catch {}
     }
   }, []);
 
@@ -126,10 +150,147 @@ export function ChatProvider({ children }) {
     fetchConversations();
   }, [isLoggedIn, fetchConversations]);
 
+
+  // Nhận thông báo tin nhắn mới cho tài khoản Candidate
+  useEffect(() => {
+    const role = String(currentUser?.role || '')
+      .toLowerCase()
+      .replace(/^role_/, '');
+
+    if (
+      !isLoggedIn ||
+      !currentUser?.email ||
+      role !== 'candidate'
+    ) {
+      return;
+    }
+
+    console.log('[ChatContext] Đăng ký nhận thông báo qua /user/queue/messages cho:', currentUser.email);
+
+    const unsubscribe = webSocketService.subscribeToUserMessages(
+      (newMsg) => {
+        console.log('[ChatContext] Nhận tin nhắn từ /user/queue/messages:', newMsg);
+        if (!newMsg?.conversationId || !newMsg?.id) {
+          return;
+        }
+
+        // Không hiển thị thông báo cho tin nhắn do chính ứng viên gửi
+        if (newMsg.senderType && String(newMsg.senderType).toLowerCase() === 'candidate') {
+          return;
+        }
+
+        const conversationId = newMsg.conversationId;
+
+        const conversation = conversations.find(
+          (c) => String(c.id) === String(conversationId)
+        );
+
+        // Kiểm tra người dùng có đang trực tiếp xem và focus vào cuộc trò chuyện này không
+        const isViewingConversation =
+          document.visibilityState === 'visible' &&
+          document.hasFocus() &&
+          isChatOpen &&
+          !isMinimized &&
+          String(activeConversationId) === String(conversationId);
+
+        console.log('[ChatContext] isViewingConversation:', isViewingConversation, {
+          activeConversationId,
+          incomingConversationId: conversationId,
+          isChatOpen,
+          isMinimized,
+          hasFocus: document.hasFocus()
+        });
+
+        if (!conversation) {
+          fetchConversations();
+          // Nếu cuộc hội thoại mới chưa có trong danh sách, vẫn phát thông báo desktop
+          if (!isViewingConversation) {
+            showChatNotification({
+              title: 'KiemJob - Tin nhắn mới',
+              senderName: 'Nhà tuyển dụng',
+              content: newMsg.content,
+              conversationId,
+              onClick: () => {
+                setActiveConversationId(conversationId);
+                setIsChatOpen(true);
+                setIsMinimized(false);
+              },
+            });
+          }
+          return;
+        }
+
+        setConversations((prev) =>
+          prev.map((c) => {
+            if (String(c.id) !== String(conversationId)) {
+              return c;
+            }
+
+            return {
+              ...c,
+              lastMessage: newMsg.content,
+              lastMessageTime: newMsg.createdAt,
+              unreadCount: isViewingConversation
+                ? 0
+                : (c.unreadCount || 0) + 1,
+            };
+          })
+        );
+
+        if (isViewingConversation) {
+          return;
+        }
+
+        const senderName =
+          conversation.companyName ||
+          conversation.recruiterName ||
+          'Nhà tuyển dụng';
+
+        // Hiển thị thông báo màn hình nếu không trực tiếp xem cuộc hội thoại
+        showChatNotification({
+          title: 'KiemJob - Tin nhắn mới',
+          senderName,
+          content: newMsg.content,
+          conversationId,
+          onClick: () => {
+            setActiveConversationId(conversationId);
+            setIsChatOpen(true);
+            setIsMinimized(false);
+
+            setConversations((prev) =>
+              prev.map((c) =>
+                String(c.id) === String(conversationId)
+                  ? { ...c, unreadCount: 0 }
+                  : c
+              )
+            );
+          },
+        });
+      }
+    );
+
+    return () => {
+      unsubscribe();
+    };
+  }, [
+    isLoggedIn,
+    currentUser?.email,
+    currentUser?.role,
+    conversations,
+    activeConversationId,
+    isChatOpen,
+    isMinimized,
+    fetchConversations,
+  ]);
+
+
   // Connect WebSocket when candidate logs in & listen to status
   useEffect(() => {
     if (!isLoggedIn || !currentUser?.email) {
       setWsConnected(false);
+      try {
+        webSocketService.disconnect();
+      } catch {}
       return;
     }
 
@@ -269,7 +430,7 @@ export function ChatProvider({ children }) {
             });
           });
         }
-      } catch {}
+      } catch { }
     }, 10000);
 
     return () => clearInterval(intervalId);
@@ -353,7 +514,7 @@ export function ChatProvider({ children }) {
     const optimisticMsg = {
       id: tempId,
       conversationId: activeConversationId,
-      senderType: currentUser?.role || 'candidate',
+      senderType: currentUser?.role || ROLES.CANDIDATE,
       content: text,
       createdAt: new Date().toISOString(),
       isOptimistic: true,
@@ -414,6 +575,8 @@ export function ChatProvider({ children }) {
         markAllAsRead,
         sendMessage,
         fetchConversations,
+        enableNotifications,
+        notificationPermission,
       }}
     >
       {children}

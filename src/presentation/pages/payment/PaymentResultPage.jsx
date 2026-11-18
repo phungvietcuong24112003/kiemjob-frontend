@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useSearchParams, useNavigate, useLocation } from 'react-router-dom';
-import { featurePackageApi } from '../../../infrastructure/api';
+import { featurePackageApi, jobPostingOrderApi } from '../../../infrastructure/api';
+import { SUPPORT_EMAIL } from '../../../config/site';
 
 /**
  * PaymentResultPage - Trang hiển thị thông báo kết quả thanh toán dịch vụ (VNPAY)
@@ -22,15 +23,25 @@ export default function PaymentResultPage() {
   const payDateRaw = searchParams.get('vnp_PayDate');
   const orderInfoRaw = searchParams.get('vnp_OrderInfo');
   const cardType = searchParams.get('vnp_CardType');
+  const paymentType = searchParams.get('type'); // 'job_posting' hoặc null (featured)
 
   // Kiểm tra thành công
   // Hỗ trợ cả trường hợp redirect thật từ VNPAY lẫn trường hợp vào route /payment/success
   const isDirectSuccessRoute = location.pathname.includes('/payment/success') || searchParams.get('status') === 'success';
-  const isSuccess = isDirectSuccessRoute || (isValidSignature && responseCode === '00');
 
   // State cho thông tin đơn hàng chi tiết từ backend (nếu có token)
   const [orderDetail, setOrderDetail] = useState(null);
   const [loadingOrder, setLoadingOrder] = useState(false);
+
+  // Fallback: nếu chữ ký hợp lệ + mã 00, hoặc đơn hàng từ API trả về trạng thái paid → thành công
+  const isOrderPaidFromApi = orderDetail && (
+    orderDetail.status === 'paid' ||
+    orderDetail.status === 'active' ||
+    orderDetail.paymentStatus === 'success'
+  );
+  const isSuccess = isDirectSuccessRoute
+    || (isValidSignature && responseCode === '00')
+    || (responseCode === '00' && isOrderPaidFromApi);
   const [copied, setCopied] = useState(false);
   const [retrying, setRetrying] = useState(false);
 
@@ -38,11 +49,18 @@ export default function PaymentResultPage() {
   const [countdown, setCountdown] = useState(15);
   const [isPaused, setIsPaused] = useState(false);
 
-  // Lấy ID đơn hàng (chuỗi trước dấu '_' nếu có timestamp)
+  // Lấy ID đơn hàng (chuỗi trước dấu '_' nếu có timestamp, hoặc bỏ prefix JOBPOST_)
   const orderId = useMemo(() => {
     if (!txnRef) return null;
+    // Xử lý txnRef dạng "JOBPOST_{orderId}_{timestamp}"
+    if (txnRef.startsWith('JOBPOST_')) {
+      const parts = txnRef.replace('JOBPOST_', '').split('_');
+      return parts[0];
+    }
     return txnRef.includes('_') ? txnRef.split('_')[0] : txnRef;
   }, [txnRef]);
+
+  const isJobPostingPayment = paymentType === 'job_posting' || (txnRef && txnRef.startsWith('JOBPOST_'));
 
   // Giải mã số tiền thanh toán (VNPAY nhân 100)
   const amountNumber = useMemo(() => {
@@ -99,26 +117,29 @@ export default function PaymentResultPage() {
   useEffect(() => {
     if (orderId) {
       setLoadingOrder(true);
-      featurePackageApi
-        .getMyOrder(orderId)
+      const fetchOrder = isJobPostingPayment
+        ? jobPostingOrderApi.getLatestOrderByJobId(orderId).catch(() => null)
+        : featurePackageApi.getMyOrder(orderId).catch(() => null);
+
+      fetchOrder
         .then((res) => {
-          setOrderDetail(res);
+          if (res) setOrderDetail(res?.data ?? res);
         })
         .catch((err) => {
-          console.warn('Không thể tải chi tiết đơn hàng từ API (có thể phiên đăng nhập chưa có):', err);
+          console.warn('Không thể tải chi tiết đơn hàng từ API:', err);
         })
         .finally(() => {
           setLoadingOrder(false);
         });
     }
-  }, [orderId]);
+  }, [orderId, isJobPostingPayment]);
 
   // Bộ đếm ngược tự động chuyển trang khi thành công
   useEffect(() => {
     if (!isSuccess || isPaused) return;
 
     if (countdown <= 0) {
-      navigate('/recruiter/orders');
+      navigate(isJobPostingPayment ? '/recruiter/jobs' : '/recruiter/orders');
       return;
     }
 
@@ -150,8 +171,14 @@ export default function PaymentResultPage() {
     }
     setRetrying(true);
     try {
-      const res = await featurePackageApi.createVnPayPayment(orderId);
-      const url = res.paymentUrl || res.data?.paymentUrl;
+      let url;
+      if (isJobPostingPayment) {
+        const res = await jobPostingOrderApi.createPaymentUrl(orderId);
+        url = res?.paymentUrl || res?.data?.paymentUrl;
+      } else {
+        const res = await featurePackageApi.createVnPayPayment(orderId);
+        url = res?.paymentUrl || res?.data?.paymentUrl;
+      }
       if (url) {
         window.location.href = url;
       } else {
@@ -160,7 +187,7 @@ export default function PaymentResultPage() {
     } catch (err) {
       console.error('Lỗi thanh toán lại:', err);
       alert('Không thể kết nối cổng thanh toán. Vui lòng quay lại danh sách đơn hàng.');
-      navigate('/recruiter/orders');
+      navigate(isJobPostingPayment ? '/recruiter/jobs' : '/recruiter/orders');
     } finally {
       setRetrying(false);
     }
@@ -262,7 +289,9 @@ export default function PaymentResultPage() {
                 </h1>
 
                 <p className="text-xs sm:text-sm text-emerald-100 max-w-md mx-auto leading-relaxed">
-                  Cảm ơn bạn! Đơn hàng đã được xác nhận và quyền lợi nổi bật đã được kích hoạt trực tiếp cho tin tuyển dụng của bạn.
+                  {isJobPostingPayment
+                    ? 'Cảm ơn bạn! Đơn hàng đã được xác nhận và tin tuyển dụng của bạn sẽ được công khai trên hệ thống.'
+                    : 'Cảm ơn bạn! Đơn hàng đã được xác nhận và quyền lợi nổi bật đã được kích hoạt trực tiếp cho tin tuyển dụng của bạn.'}
                 </p>
 
                 {/* Hiển thị số tiền nổi bật */}
@@ -284,17 +313,21 @@ export default function PaymentResultPage() {
                 <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-emerald-50 via-teal-50/50 to-white border border-emerald-200/80">
                   <div className="flex items-start gap-3">
                     <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-md shadow-emerald-600/20">
-                      <span className="material-symbols-outlined text-[24px]">rocket_launch</span>
+                      <span className="material-symbols-outlined text-[24px]">
+                        {isJobPostingPayment ? 'work' : 'rocket_launch'}
+                      </span>
                     </div>
                     <div className="flex-1">
                       <h4 className="text-sm font-extrabold text-[#005c55] flex items-center gap-2">
-                        <span>Gói Dịch Vụ Đã Được Kích Hoạt Tức Thì</span>
+                        <span>{isJobPostingPayment ? 'Tin Tuyển Dụng Đã Được Kích Hoạt' : 'Gói Dịch Vụ Đã Được Kích Hoạt Tức Thì'}</span>
                         <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold">
-                          VIP
+                          {isJobPostingPayment ? 'PAID' : 'VIP'}
                         </span>
                       </h4>
                       <p className="text-xs text-slate-600 mt-1 leading-relaxed">
-                        Tin tuyển dụng của bạn giờ đây đã được gắn nhãn nổi bật và ưu tiên xuất hiện tại các vị trí đầu tiên của trang chủ và trang tìm việc, giúp tăng tới <strong className="text-[#005c55]">gấp 3 lần lượt ứng tuyển</strong> từ ứng viên chất lượng cao.
+                        {isJobPostingPayment
+                          ? 'Tin tuyển dụng trả phí của bạn giờ đây đã được công khai và hiển thị trên trang tìm việc trong suốt thời gian đã đăng ký.'
+                          : <>Tin tuyển dụng của bạn giờ đây đã được gắn nhãn nổi bật và ưu tiên xuất hiện tại các vị trí đầu tiên của trang chủ và trang tìm việc, giúp tăng tới <strong className="text-[#005c55]">gấp 3 lần lượt ứng tuyển</strong> từ ứng viên chất lượng cao.</>}
                       </p>
                     </div>
                   </div>
@@ -352,10 +385,12 @@ export default function PaymentResultPage() {
                     <div className="flex items-center justify-between py-1.5 border-b border-slate-100 sm:border-b-0">
                       <span className="text-slate-500 flex items-center gap-1.5">
                         <span className="material-symbols-outlined text-[16px]">stars</span>
-                        Gói dịch vụ:
+                        {isJobPostingPayment ? 'Loại đơn:' : 'Gói dịch vụ:'}
                       </span>
                       <span className="font-bold text-[#005c55]">
-                        {orderDetail?.planName || decodedOrderInfo || 'Gói Đẩy Top Nổi Bật'}
+                        {isJobPostingPayment
+                          ? (orderDetail?.durationDays ? `Tin trả phí ${orderDetail.durationDays} ngày` : decodedOrderInfo || 'Đăng tin trả phí')
+                          : (orderDetail?.planName || decodedOrderInfo || 'Gói Đẩy Top Nổi Bật')}
                       </span>
                     </div>
 
@@ -434,7 +469,7 @@ export default function PaymentResultPage() {
                       progress_activity
                     </span>
                     <span>
-                      Tự động chuyển về trang đơn hàng sau{' '}
+                      Tự động chuyển về {isJobPostingPayment ? 'trang quản lý tin' : 'trang đơn hàng'} sau{' '}
                       <strong className="text-[#005c55] font-extrabold">{countdown}s</strong>...
                     </span>
                   </div>
@@ -450,11 +485,11 @@ export default function PaymentResultPage() {
                 {/* Nút hành động */}
                 <div className="flex flex-col sm:flex-row items-center gap-3 pt-2 no-print">
                   <button
-                    onClick={() => navigate('/recruiter/orders')}
+                    onClick={() => navigate(isJobPostingPayment ? '/recruiter/jobs' : '/recruiter/orders')}
                     className="w-full sm:flex-1 px-5 py-3.5 rounded-xl bg-gradient-to-r from-[#005c55] to-[#0f766e] hover:opacity-95 text-white text-xs sm:text-sm font-bold transition-all shadow-md shadow-[#005c55]/20 flex items-center justify-center gap-2 cursor-pointer"
                   >
-                    <span className="material-symbols-outlined text-[18px]">receipt_long</span>
-                    <span>Xem Quản Lý Đơn Hàng</span>
+                    <span className="material-symbols-outlined text-[18px]">{isJobPostingPayment ? 'list_alt' : 'receipt_long'}</span>
+                    <span>{isJobPostingPayment ? 'Quản Lý Tin Tuyển Dụng' : 'Xem Quản Lý Đơn Hàng'}</span>
                   </button>
 
                   <button
@@ -541,7 +576,7 @@ export default function PaymentResultPage() {
                     </p>
                     <p className="pt-1 text-[11px] font-semibold text-amber-900">
                       Hotline: <span className="underline">1900 6868</span> • Email:{' '}
-                      <span className="underline">support@kiemjob.com</span>
+                      <span className="underline">{SUPPORT_EMAIL}</span>
                     </p>
                   </div>
                 </div>

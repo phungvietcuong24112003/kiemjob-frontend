@@ -7,6 +7,7 @@ import {
   updateJobPostStatus,
   deleteJobPost as deleteJobPostApi,
 } from '../../../infrastructure/api';
+import JobPostingPaymentModal from './components/JobPostingPaymentModal';
 
 export default function JobManagementPage() {
   const navigate = useNavigate();
@@ -19,6 +20,11 @@ export default function JobManagementPage() {
   const [showBoostModal, setShowBoostModal] = useState(false);
   const [selectedJobForBoost, setSelectedJobForBoost] = useState(null);
   const [toastMsg, setToastMsg] = useState(null);
+
+  // Payment & Renewal Modal State
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [paymentJob, setPaymentJob] = useState(null);
+  const [paymentMode, setPaymentMode] = useState('pay'); // 'pay' | 'renew'
 
   const [jobs, setJobs] = useState([]);
   const [companyName, setCompanyName] = useState('Doanh nghiệp');
@@ -95,16 +101,29 @@ export default function JobManagementPage() {
         }
 
         const rawStatus = String(job.status ?? '').toLowerCase();
+        const modStatus = String(job.moderationStatus ?? '').toUpperCase();
+        const postingType = String(job.postingType ?? 'FREE').toUpperCase();
 
         let status = rawStatus;
-        if (['open', 'active', 'approved'].includes(rawStatus)) {
+        let statusLabel = 'Chưa xác định';
+
+        const isAwaitingPayment = postingType === 'PAID' && rawStatus === 'draft' && modStatus === 'APPROVED';
+
+        if (isAwaitingPayment) {
+          status = 'awaiting_payment';
+          statusLabel = 'Chờ thanh toán';
+        } else if (['open', 'active', 'approved'].includes(rawStatus)) {
           status = 'active';
+          statusLabel = 'Đang hiển thị';
         } else if (['closed', 'paused'].includes(rawStatus)) {
           status = 'closed';
-        } else if (['pending', 'pending_approval', 'draft'].includes(rawStatus)) {
-          status = 'pending';
+          statusLabel = modStatus === 'REJECTED' ? 'Bị từ chối' : 'Đã tạm dừng';
         } else if (['expired'].includes(rawStatus)) {
           status = 'expired';
+          statusLabel = 'Đã hết hạn';
+        } else {
+          status = 'pending';
+          statusLabel = modStatus === 'DRAFT' ? 'Bản nháp' : 'Chờ duyệt';
         }
 
         const deadline = job.applicationDeadline
@@ -128,15 +147,14 @@ export default function JobManagementPage() {
           title: job.title ?? 'Chưa có tiêu đề',
           category,
           categoryName: job.categoryName,
+          postingType,
+          moderationStatus: modStatus,
+          isAwaitingPayment,
+          paidUntil: job.paidUntil,
+          durationDays: job.durationDays,
+          rejectionReason: job.rejectionReason,
           status,
-          status_label:
-            status === 'active'
-              ? 'Đang hiển thị'
-              : status === 'pending'
-              ? 'Chờ duyệt'
-              : status === 'expired'
-              ? 'Đã hết hạn'
-              : 'Đã tạm dừng',
+          status_label: statusLabel,
           salary_display: salaryDisplay,
           location:
             job.location ||
@@ -176,7 +194,7 @@ export default function JobManagementPage() {
   const tabCounts = {
     all: jobs.length,
     active: jobs.filter((j) => j.status === 'active').length,
-    pending: jobs.filter((j) => j.status === 'pending').length,
+    pending: jobs.filter((j) => j.status === 'pending' || j.status === 'awaiting_payment').length,
     closed: jobs.filter((j) => j.status === 'closed' || j.status === 'expired').length,
   };
 
@@ -190,7 +208,7 @@ export default function JobManagementPage() {
 
     let matchTab = true;
     if (statusTab === 'active') matchTab = job.status === 'active';
-    else if (statusTab === 'pending') matchTab = job.status === 'pending';
+    else if (statusTab === 'pending') matchTab = job.status === 'pending' || job.status === 'awaiting_payment';
     else if (statusTab === 'closed') matchTab = job.status === 'closed' || job.status === 'expired';
 
     return matchSearch && matchCat && matchTab;
@@ -477,21 +495,41 @@ export default function JobManagementPage() {
                       {job.code}
                     </span>
 
+                    {/* Badge Loại tin */}
+                    <span
+                      className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                        job.postingType === 'PAID'
+                          ? 'bg-blue-100 text-blue-800 border border-blue-200'
+                          : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                      }`}
+                    >
+                      {job.postingType === 'PAID' ? 'PAID (Trả phí)' : 'FREE (Miễn phí)'}
+                    </span>
+
+                    {/* Badge Trạng thái */}
                     <span
                       className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                        job.status === 'active'
+                        job.isAwaitingPayment
+                          ? 'bg-amber-100 text-amber-800 border border-amber-300 animate-pulse'
+                          : job.status === 'active'
                           ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                           : job.status === 'pending'
                           ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                          : job.status === 'expired'
+                          ? 'bg-red-50 text-red-700 border border-red-200'
                           : 'bg-slate-100 text-slate-600 border border-slate-200'
                       }`}
                     >
                       <span
                         className={`w-1.5 h-1.5 rounded-full ${
-                          job.status === 'active'
+                          job.isAwaitingPayment
+                            ? 'bg-amber-500'
+                            : job.status === 'active'
                             ? 'bg-emerald-500'
                             : job.status === 'pending'
                             ? 'bg-amber-500'
+                            : job.status === 'expired'
+                            ? 'bg-red-500'
                             : 'bg-slate-400'
                         }`}
                       />
@@ -503,7 +541,19 @@ export default function JobManagementPage() {
                         {job.categoryName}
                       </span>
                     )}
+
+                    {job.postingType === 'PAID' && job.paidUntil && (
+                      <span className="text-[10px] text-blue-700 font-medium bg-blue-50 px-2 py-0.5 rounded border border-blue-100">
+                        Hạn hiển thị: {new Date(job.paidUntil).toLocaleDateString('vi-VN')}
+                      </span>
+                    )}
                   </div>
+
+                  {job.rejectionReason && (
+                    <div className="p-2 rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs">
+                      <strong>Lý do từ chối:</strong> {job.rejectionReason}
+                    </div>
+                  )}
 
                   {/* Title */}
                   <Link
@@ -555,6 +605,40 @@ export default function JobManagementPage() {
 
                 {/* Actions */}
                 <div className="flex items-center gap-1.5 flex-wrap">
+                  {/* Nút Thanh toán ngay cho tin PAID chờ thanh toán */}
+                  {job.isAwaitingPayment && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPaymentJob(job);
+                        setPaymentMode('pay');
+                        setShowPaymentModal(true);
+                      }}
+                      className="h-8 px-3 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1 shadow-xs transition-colors cursor-pointer animate-pulse"
+                      title="Thanh toán phí đăng tin qua VNPay"
+                    >
+                      <span className="material-symbols-outlined text-[15px]">credit_card</span>
+                      <span>Thanh toán ngay</span>
+                    </button>
+                  )}
+
+                  {/* Nút Gia hạn cho tin PAID */}
+                  {job.postingType === 'PAID' && !job.isAwaitingPayment && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPaymentJob(job);
+                        setPaymentMode('renew');
+                        setShowPaymentModal(true);
+                      }}
+                      className="h-8 px-2.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+                      title="Gia hạn thời gian hiển thị tin"
+                    >
+                      <span className="material-symbols-outlined text-[15px]">history</span>
+                      <span className="hidden sm:inline">Gia hạn</span>
+                    </button>
+                  )}
+
                   <Link
                     to={`/recruiter/jobs/${job.id}`}
                     className="h-8 px-3 rounded-lg bg-[#005c55] hover:bg-[#007952] text-white text-xs font-semibold flex items-center gap-1 transition-colors shadow-xs"
@@ -680,6 +764,22 @@ export default function JobManagementPage() {
           </div>
         </div>
       )}
+
+      {/* Modal Thanh toán & Gia hạn tin tuyển dụng */}
+      <JobPostingPaymentModal
+        isOpen={showPaymentModal}
+        onClose={() => {
+          setShowPaymentModal(false);
+          setPaymentJob(null);
+        }}
+        job={paymentJob}
+        mode={paymentMode}
+        onSuccess={() => {
+          setShowPaymentModal(false);
+          setPaymentJob(null);
+          loadJobs();
+        }}
+      />
     </div>
   );
 }

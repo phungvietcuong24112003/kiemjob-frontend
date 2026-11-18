@@ -1,12 +1,13 @@
 import React, { useCallback, useEffect, useState, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import jobPostApi from '../../../infrastructure/api/jobPostApi';
-import applicationApi from '../../../infrastructure/api/appicationApi';
+import applicationApi from '../../../infrastructure/api/applicationApi';
 import featurePackageApi from '../../../infrastructure/api/featurePackageApi';
 import EditJobModal from '../../components/recruiter/EditJobModal';
 import PromoteJobModal from './components/PromoteJobModal';
 import ApplicantTable from '../../components/recruiter/ApplicantTable';
 import CvDetailModal from '../../components/recruiter/CvDetailModal';
+import RichTextViewer from '../../components/editor/RichTextViewer';
 import useAiScores from '../../../application/hooks/useAiScores';
 import apiClient from '../../../infrastructure/api/client';
 import {
@@ -658,9 +659,12 @@ export default function JobDetailManagementPage() {
                           <span className="w-1.5 h-1.5 rounded-full bg-[#005c55]"></span>
                           {detail.title}
                         </h3>
-                        <p className="text-xs sm:text-sm text-[#3e4947] whitespace-pre-line pl-3.5 border-l-2 border-[#eaedff]">
-                          {detail.content}
-                        </p>
+                        <div className="pl-3.5 border-l-2 border-[#eaedff]">
+                          <RichTextViewer
+                            content={detail.content}
+                            className="text-xs sm:text-sm text-[#3e4947]"
+                          />
+                        </div>
                       </div>
                     ))}
                   </div>

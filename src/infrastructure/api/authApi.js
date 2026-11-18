@@ -9,6 +9,8 @@
  */
 
 import { apiClient } from './client';
+import { USER } from '../../config/storageKeys';
+import { webSocketService } from '../websocket/WebSocketService';
 
 export const authApi = {
   /**
@@ -68,6 +70,15 @@ export const authApi = {
    */
   login: async (credentials) => {
     return await apiClient.post('/auth/login', credentials);
+  },
+
+  /**
+   * Đăng nhập / Đăng ký nhanh bằng Google OAuth
+   * @param {object} payload - { code, accessToken, idToken, redirectUri, role }
+   * @returns {Promise<object>} - Thông tin AccountResponse
+   */
+  loginWithGoogle: async (payload) => {
+    return await apiClient.post('/auth/google', payload);
   },
 
   /**
@@ -164,9 +175,13 @@ export const authApi = {
     }
     // Xóa dữ liệu phiên trong localStorage
     if (typeof localStorage !== 'undefined') {
-      localStorage.removeItem('kiemjob_user');
-      localStorage.removeItem('kiemjob_token');
+      localStorage.removeItem(USER);
     }
+    // Ngắt kết nối WebSocket và xóa subscriptions cũ
+    try {
+      webSocketService.disconnect();
+    } catch {}
+
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new Event('authChange'));
     }
@@ -279,6 +294,7 @@ export const {
   register,
   registerCandidate,
   login,
+  loginWithGoogle,
   sendRecruiterLoginOtp,
   loginRecruiterOtp,
   registerRecruiter,

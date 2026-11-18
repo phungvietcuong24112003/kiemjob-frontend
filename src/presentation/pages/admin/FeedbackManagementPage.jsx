@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { feedbackApi } from '../../../infrastructure/api';
+import { ROLES } from '../../../domain/constants/roles';
 
 export default function FeedbackManagementPage() {
   const [feedbacks, setFeedbacks] = useState([]);
@@ -77,14 +78,14 @@ export default function FeedbackManagementPage() {
 
   const getRoleBadge = (role) => {
     const r = role?.toLowerCase();
-    if (r === 'recruiter') {
+    if (r === ROLES.RECRUITER) {
       return {
         label: 'Nhà tuyển dụng',
         bg: 'bg-teal-50 text-[#005c55] border-teal-200',
         icon: 'corporate_fare',
       };
     }
-    if (r === 'admin') {
+    if (r === ROLES.ADMIN) {
       return {
         label: 'Admin',
         bg: 'bg-rose-50 text-rose-700 border-rose-200',
@@ -263,9 +264,9 @@ export default function FeedbackManagementPage() {
             </button>
             <button
               type="button"
-              onClick={() => setRoleFilter('candidate')}
+              onClick={() => setRoleFilter(ROLES.CANDIDATE)}
               className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-colors cursor-pointer ${
-                roleFilter === 'candidate'
+                roleFilter === ROLES.CANDIDATE
                   ? 'bg-white text-[#005c55] shadow-2xs'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
@@ -274,9 +275,9 @@ export default function FeedbackManagementPage() {
             </button>
             <button
               type="button"
-              onClick={() => setRoleFilter('recruiter')}
+              onClick={() => setRoleFilter(ROLES.RECRUITER)}
               className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-colors cursor-pointer ${
-                roleFilter === 'recruiter'
+                roleFilter === ROLES.RECRUITER
                   ? 'bg-white text-[#005c55] shadow-2xs'
                   : 'text-slate-600 hover:text-slate-900'
               }`}

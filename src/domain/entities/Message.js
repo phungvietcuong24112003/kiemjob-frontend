@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Message Entity
  * Định nghĩa cấu trúc chuẩn của tin nhắn trong hệ thống KiemJob
  *
@@ -19,7 +19,7 @@ export function createMessage(data = {}) {
     id: data.id || null,
     conversationId: data.conversationId || null,
     senderId: data.senderId || null,
-    senderRole: data.senderRole || 'candidate',
+    senderRole: data.senderRole || ROLES.CANDIDATE,
     recipientId: data.recipientId || null,
     content: data.content || '',
     messageType: data.messageType || 'text',

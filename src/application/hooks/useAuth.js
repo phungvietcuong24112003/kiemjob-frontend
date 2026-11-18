@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { logout } from '../../infrastructure/api';
 import { hasAuthCookie } from '../../infrastructure/utils/cookieUtils';
+import { USER } from '../../config/storageKeys';
 
 /**
  * Custom hook quản lý trạng thái xác thực và đồng bộ localStorage
@@ -10,13 +11,12 @@ export function useAuth() {
     // Nếu không có cookie thì chắc chắn ở trạng thái khách
     if (!hasAuthCookie()) {
       if (typeof localStorage !== 'undefined') {
-        localStorage.removeItem('kiemjob_user');
-        localStorage.removeItem('kiemjob_token');
+        localStorage.removeItem(USER);
       }
       return null;
     }
     try {
-      const stored = localStorage.getItem('kiemjob_user');
+      const stored = localStorage.getItem(USER);
       return stored ? JSON.parse(stored) : null;
     } catch {
       return null;
@@ -28,14 +28,13 @@ export function useAuth() {
   useEffect(() => {
     const handleAuthSync = () => {
       if (!hasAuthCookie()) {
-        localStorage.removeItem('kiemjob_user');
-        localStorage.removeItem('kiemjob_token');
+        localStorage.removeItem(USER);
         setCurrentUser(null);
         setToken(null);
         return;
       }
       try {
-        const storedUser = localStorage.getItem('kiemjob_user');
+        const storedUser = localStorage.getItem(USER);
         setCurrentUser(storedUser ? JSON.parse(storedUser) : null);
         setToken(null);
       } catch {
@@ -53,8 +52,7 @@ export function useAuth() {
   }, []);
 
   const loginUser = useCallback((user) => {
-    localStorage.removeItem('kiemjob_token');
-    if (user) localStorage.setItem('kiemjob_user', JSON.stringify(user));
+    if (user) localStorage.setItem(USER, JSON.stringify(user));
     setCurrentUser(user);
     setToken(null);
     window.dispatchEvent(new Event('authChange'));

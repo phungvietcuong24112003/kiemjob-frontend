@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useRecruiterChat } from '../../../application/context/RecruiterChatContext';
+import { ROLES } from '../../../domain/constants/roles';
 
 export default function RecruiterFloatingChat() {
   const {
@@ -17,6 +18,8 @@ export default function RecruiterFloatingChat() {
     minimizeChat,
     restoreChat,
     sendMessage,
+    enableNotifications,
+    notificationPermission,
   } = useRecruiterChat();
 
   const [inputText, setInputText] = useState('');
@@ -141,6 +144,33 @@ export default function RecruiterFloatingChat() {
 
             {/* Header Action Controls */}
             <div className="flex items-center gap-0.5 shrink-0">
+              {/* Nút bật/tắt thông báo desktop cho nhà tuyển dụng */}
+              <button
+                type="button"
+                onClick={enableNotifications}
+                className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors cursor-pointer ${
+                  notificationPermission === 'granted'
+                    ? 'text-emerald-300 hover:text-white hover:bg-white/15'
+                    : notificationPermission === 'denied'
+                    ? 'text-red-300 hover:text-white hover:bg-white/15'
+                    : 'text-amber-300 hover:text-white hover:bg-white/15 animate-pulse'
+                }`}
+                title={
+                  notificationPermission === 'granted'
+                    ? 'Thông báo màn hình đang bật'
+                    : notificationPermission === 'denied'
+                    ? 'Thông báo bị chặn trong cài đặt trình duyệt'
+                    : 'Bấm để bật thông báo tin nhắn trên màn hình'
+                }
+              >
+                <span className="material-symbols-outlined text-[18px]">
+                  {notificationPermission === 'granted'
+                    ? 'notifications_active'
+                    : notificationPermission === 'denied'
+                    ? 'notifications_off'
+                    : 'notifications'}
+                </span>
+              </button>
               <button
                 type="button"
                 onClick={minimizeChat}
@@ -234,7 +264,7 @@ export default function RecruiterFloatingChat() {
 
             {/* Messages */}
             {messages.map((msg) => {
-              const isMe = msg.senderType === 'recruiter';
+              const isMe = msg.senderType === ROLES.RECRUITER;
               return (
                 <div
                   key={msg.id}

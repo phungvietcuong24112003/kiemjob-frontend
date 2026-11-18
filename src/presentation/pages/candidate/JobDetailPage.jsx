@@ -10,9 +10,13 @@ import { jobPostApi } from '../../../infrastructure/api/jobPostApi';
 import authApi from '../../../infrastructure/api/authApi';
 import { profileApi } from '../../../infrastructure/api/profileApi';
 import { getCvs } from '../../../infrastructure/api/cvApi';
-import { applicationApi } from '../../../infrastructure/api/appicationApi';
+import { applicationApi } from '../../../infrastructure/api/applicationApi';
 import { savedJobApi } from '../../../infrastructure/api/savedJobApi';
+import { recommendationApi } from '../../../infrastructure/api/recommendationApi';
 import { hasAuthCookie } from '../../../infrastructure/utils/cookieUtils';
+import RichTextViewer from '../../components/editor/RichTextViewer';
+
+import { SITE_URL } from '../../../config/site';
 
 // Helper: ánh xạ icon cho từng danh mục nghề nghiệp
 const getCategoryIcon = (categoryName) => {
@@ -332,6 +336,10 @@ export default function JobDetailPage() {
         if (data.status && data.status !== 'open') {
           throw new Error('Tin tuyển dụng này hiện chưa được công khai hoặc đang chờ kiểm duyệt.');
         }
+
+        // Ghi nhận tương tác VIEW của ứng viên
+        recommendationApi.recordInteraction({ jobId: Number(id), actionType: 'VIEW' });
+
 
         const details = Array.isArray(detailsData) ? detailsData : [];
         const skills = Array.isArray(skillsData) ? skillsData : [];
@@ -930,9 +938,12 @@ export default function JobDetailPage() {
                           <span className="w-1.5 h-1.5 rounded-full bg-[#005c55]"></span>
                           {detail.title}
                         </h3>
-                        <p className="text-xs sm:text-sm text-[#3e4947] whitespace-pre-line pl-3.5 border-l-2 border-[#eaedff]">
-                          {detail.content}
-                        </p>
+                        <div className="pl-3.5 border-l-2 border-[#eaedff]">
+                          <RichTextViewer
+                            content={detail.content}
+                            className="text-xs sm:text-sm text-[#3e4947]"
+                          />
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -1285,7 +1296,7 @@ export default function JobDetailPage() {
                       rel="noopener noreferrer"
                       className="text-[#005c55] hover:underline font-semibold truncate"
                     >
-                      {companyInfo?.website || 'https://kiemjob.vn'}
+                      {companyInfo?.website || SITE_URL}
                     </a>
                   </div>
                 </div>

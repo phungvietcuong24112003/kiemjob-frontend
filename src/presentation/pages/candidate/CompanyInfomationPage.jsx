@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+﻿import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Link, useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import {
   getProvinces,
@@ -23,6 +23,8 @@ import {
 import { hasAuthCookie } from '../../../infrastructure/utils/cookieUtils';
 import { useChat } from '../../../application/context/ChatContext';
 import CompanyTierBadge from '../../components/common/CompanyTierBadge';
+import { USER } from '../../../config/storageKeys';
+import { ROLES } from '../../../domain/constants/roles';
 
 /**
  * Danh sách định nghĩa các loại liên kết mạng xã hội & truyền thông của doanh nghiệp (company_links.type)
@@ -167,17 +169,8 @@ export default function CompanyInfomationPage() {
   const activeCompanyId = paramId || queryId || null;
 
   // Trạng thái dữ liệu công ty
-  const [company, setCompany] = useState({
-    id: null,
-    companyType: 'big',
-    name: '',
-    logoUrl: '',
-    bannerUrl: '',
-    email: '',
-    phone: '',
-    description: '',
-    status: 'approved',
-  });
+  const [company, setCompany] = useState(null);
+  const [logoFailed, setLogoFailed] = useState(false);
 
   const [addresses, setAddresses] = useState([]);
   const [links, setLinks] = useState([]);
@@ -308,7 +301,7 @@ export default function CompanyInfomationPage() {
     let recruiterProfile = null;
 
     try {
-      const stored = localStorage.getItem('kiemjob_user');
+      const stored = localStorage.getItem(USER);
       if (stored) currentUser = JSON.parse(stored);
     } catch {
       // ignore
@@ -384,23 +377,11 @@ export default function CompanyInfomationPage() {
 
         // Kiểm tra quyền chỉnh sửa: Quản trị viên, hoặc Recruiter sở hữu công ty này
         const isRecruiterOwner = recruiterProfile && String(recruiterProfile.companyId) === String(compData.id);
-        const isAdmin = currentUser?.role === 'admin' || currentUser?.roleName === 'ADMIN';
+        const isAdmin = currentUser?.role === ROLES.ADMIN || currentUser?.roleName === ROLES.ADMIN;
         setIsOwnerOrAdmin(Boolean(isRecruiterOwner || isAdmin));
       } else {
-        // Fallback mẫu khi chưa có dữ liệu DB
-        setCompany({
-          id: targetId,
-          companyType: 'big',
-          name: 'CÔNG TY CỔ PHẦN CÔNG NGHỆ TECHVINA',
-          logoUrl: 'https://images.unsplash.com/photo-1549923746-c502d488b3ea?w=150&auto=format&fit=crop&q=80',
-          bannerUrl: 'https://images.unsplash.com/photo-1497366216548-37526070297c?w=1200&auto=format&fit=crop&q=80',
-          email: 'contact@techvina.com.vn',
-          phone: '024 7300 8899',
-          description:
-            'TechVina là tập đoàn tiên phong kiến tạo hệ sinh thái FinTech & AI tại Đông Nam Á. Chúng tôi cung cấp các giải pháp thanh toán số bảo mật cao, hệ thống ngân hàng mở và nền tảng dữ liệu lớn cho hơn 12 triệu người dùng doanh nghiệp và cá nhân.',
-          status: 'approved',
-        });
-        setIsOwnerOrAdmin(true); // Cho phép thử nghiệm chỉnh sửa nếu là trang quản lý
+        setCompany(null);
+        setIsOwnerOrAdmin(false);
       }
 
       setAddresses(addrData);
@@ -409,6 +390,8 @@ export default function CompanyInfomationPage() {
       setJobs(rawJobs);
     } catch (err) {
       console.error('Lỗi khi tải dữ liệu công ty:', err);
+      setCompany(null);
+      setIsOwnerOrAdmin(false);
       showToast('Không thể tải toàn bộ thông tin công ty từ máy chủ', 'error');
     } finally {
       setLoading(false);
@@ -417,6 +400,7 @@ export default function CompanyInfomationPage() {
 
   // Mở modal Chỉnh sửa thông tin công ty
   const handleOpenEditCompany = () => {
+    if (!company) return;
     setEditFormData({
       name: company.name || '',
       companyType: company.companyType || 'big',
@@ -897,6 +881,36 @@ export default function CompanyInfomationPage() {
     return true;
   });
 
+  if (loading) {
+    return (
+      <div className="w-full min-h-[60vh] flex flex-col items-center justify-center bg-[#faf8ff] text-slate-500 gap-3">
+        <span className="w-8 h-8 border-3 border-[#005c55]/20 border-t-[#005c55] rounded-full animate-spin" />
+        <p className="text-sm font-medium">Đang tải thông tin doanh nghiệp...</p>
+      </div>
+    );
+  }
+
+  if (!company) {
+    return (
+      <div className="w-full min-h-[70vh] flex flex-col items-center justify-center bg-[#faf8ff] text-center px-4 py-16">
+        <div className="w-20 h-20 rounded-3xl bg-slate-100 flex items-center justify-center text-slate-400 mb-5 shadow-inner">
+          <span className="material-symbols-outlined text-[40px]">domain_disabled</span>
+        </div>
+        <h2 className="text-2xl font-bold text-slate-800 mb-2">Không tìm thấy công ty</h2>
+        <p className="text-sm text-slate-500 max-w-md mb-6 leading-relaxed">
+          Doanh nghiệp này không tồn tại hoặc đã ngừng hoạt động trên hệ thống KiemJob.
+        </p>
+        <Link
+          to="/companies"
+          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#005c55] hover:bg-[#007952] text-white text-sm font-semibold shadow-md shadow-[#005c55]/20 transition-all cursor-pointer"
+        >
+          <span className="material-symbols-outlined text-[18px]">arrow_back</span>
+          <span>Quay lại danh sách công ty</span>
+        </Link>
+      </div>
+    );
+  }
+
   return (
     <div className="w-full bg-[#faf8ff] font-sans text-[#131b2e] antialiased min-h-screen pb-16">
       {/* Toast Notification */}
@@ -956,18 +970,12 @@ export default function CompanyInfomationPage() {
               {/* Logo công ty (Logo Container với ring & shadow) */}
               <div className="relative shrink-0">
                 <div className="w-28 h-28 sm:w-36 sm:h-36 rounded-2xl ring-4 ring-white/30 shadow-2xl overflow-hidden bg-white p-2 flex items-center justify-center backdrop-blur-xs">
-                  {company.logoUrl ? (
+                  {!logoFailed && company.logoUrl ? (
                     <img
                       src={company.logoUrl}
                       alt={company.name}
                       className="w-full h-full object-contain rounded-xl"
-                      onError={(e) => {
-                        e.target.onerror = null;
-                        e.target.style.display = 'none';
-                        if (e.target.parentElement) {
-                          e.target.parentElement.innerHTML = `<span class="material-symbols-outlined text-[64px] text-[#005c55]">corporate_fare</span>`;
-                        }
-                      }}
+                      onError={() => setLogoFailed(true)}
                     />
                   ) : (
                     <span className="material-symbols-outlined text-[64px] text-[#005c55]">corporate_fare</span>
@@ -1598,7 +1606,7 @@ export default function CompanyInfomationPage() {
                   type="text"
                   value={editFormData.name}
                   onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
-                  placeholder="Ví dụ: CÔNG TY CỔ PHẦN CÔNG NGHỆ TECHVINA"
+                  placeholder="Ví dụ: CÔNG TY CỔ PHẦN CÔNG NGHỆ ABC"
                   className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#005c55]/20 focus:border-[#005c55]"
                 />
                 {companyErrors.name && <p className="text-xs text-rose-600 mt-1">{companyErrors.name}</p>}
@@ -1640,7 +1648,7 @@ export default function CompanyInfomationPage() {
                   type="email"
                   value={editFormData.email}
                   onChange={(e) => setEditFormData({ ...editFormData, email: e.target.value })}
-                  placeholder="contact@techvina.com.vn"
+                  placeholder="contact@company.com.vn"
                   className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#005c55]/20 focus:border-[#005c55]"
                 />
                 {companyErrors.email && <p className="text-xs text-rose-600 mt-1">{companyErrors.email}</p>}

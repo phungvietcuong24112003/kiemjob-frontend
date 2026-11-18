@@ -1,5 +1,7 @@
-import authApi from '../api/authApi';
+﻿import authApi from '../api/authApi';
 import profileApi from '../api/profileApi';
+import { USER } from '../../config/storageKeys';
+import { ROLES } from '../../domain/constants/roles';
 
 /**
  * Đọc giá trị của một Cookie theo tên
@@ -100,8 +102,7 @@ export function clearAuthSession() {
   deleteCookie('token');
 
   if (typeof localStorage !== 'undefined') {
-    localStorage.removeItem('kiemjob_user');
-    localStorage.removeItem('kiemjob_token');
+    localStorage.removeItem(USER);
   }
 
   if (typeof window !== 'undefined') {
@@ -119,12 +120,10 @@ export function syncAuthStateWithCookie() {
 
   const hasCookie = hasAuthCookie();
   if (!hasCookie) {
-    const hadUser = localStorage.getItem('kiemjob_user') !== null;
-    const hadToken = localStorage.getItem('kiemjob_token') !== null;
+    const hadUser = localStorage.getItem(USER) !== null;
 
-    if (hadUser || hadToken) {
-      localStorage.removeItem('kiemjob_user');
-      localStorage.removeItem('kiemjob_token');
+    if (hadUser) {
+      localStorage.removeItem(USER);
       window.dispatchEvent(new Event('authChange'));
     }
     return false;
@@ -154,14 +153,14 @@ export async function checkAuthSession() {
     }
 
     const previousUser = JSON.parse(
-      localStorage.getItem('kiemjob_user') || 'null'
+      localStorage.getItem(USER) || 'null'
     );
 
     let user = {
       id: account.id,
       email: account.email || '',
       phone: account.phone || previousUser?.phone || '',
-      role: account.role || 'candidate',
+      role: account.role || ROLES.CANDIDATE,
       fullName:
         account.fullName ||
         account.fullname ||
@@ -177,7 +176,7 @@ export async function checkAuthSession() {
     };
 
     // Khôi phục thông tin công ty của recruiter sau F5
-    if (user.role === 'recruiter') {
+    if (user.role === ROLES.RECRUITER) {
       try {
         const recruiterResponse = await profileApi.getRecruiterProfile();
         const recruiter = recruiterResponse?.data ?? recruiterResponse;
@@ -208,7 +207,7 @@ export async function checkAuthSession() {
 
         // Không tự kết luận tài khoản chưa có công ty
         // chỉ vì API hồ sơ tạm thời gặp lỗi.
-        if (previousUser?.role === 'recruiter') {
+        if (previousUser?.role === ROLES.RECRUITER) {
           user = {
             ...user,
             recruiterId: previousUser.recruiterId ?? null,
@@ -221,7 +220,7 @@ export async function checkAuthSession() {
           };
         }
       }
-    } else if (user.role === 'candidate') {
+    } else if (user.role === ROLES.CANDIDATE) {
       try {
         const candidateResponse = await profileApi.getCandidateProfile();
         const candidate = candidateResponse?.data ?? candidateResponse;
@@ -245,7 +244,7 @@ export async function checkAuthSession() {
         }
       } catch (error) {
         console.warn('Không thể tải hồ sơ ứng viên:', error);
-        if (previousUser?.role === 'candidate' && previousUser.fullName) {
+        if (previousUser?.role === ROLES.CANDIDATE && previousUser.fullName) {
           user.fullName = previousUser.fullName;
           user.fullname = previousUser.fullname || previousUser.fullName;
           user.avatar = previousUser.avatar || user.avatar;
@@ -255,7 +254,7 @@ export async function checkAuthSession() {
     }
 
     setCookie('logged_in', 'true', 7);
-    localStorage.setItem('kiemjob_user', JSON.stringify(user));
+    localStorage.setItem(USER, JSON.stringify(user));
     window.dispatchEvent(new Event('authChange'));
 
     return user;

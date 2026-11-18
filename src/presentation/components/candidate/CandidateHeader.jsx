@@ -1,9 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { NavLink, Link, useNavigate, useLocation } from 'react-router-dom';
 import { useChat, formatChatTime } from '../../../application/context/ChatContext';
+import { useNotification } from '../../../application/context/NotificationContext';
+import NotificationDropdown from '../notification/NotificationDropdown';
 import { logout } from '../../../infrastructure/api';
+import { recommendationApi } from '../../../infrastructure/api/recommendationApi';
 import { hasAuthCookie, checkAuthSession } from '../../../infrastructure/utils/cookieUtils';
+
 import { jobCategoryApi } from '../../../infrastructure/api/jobCategoryApi';
+import { USER } from '../../../config/storageKeys';
+import { ROLES } from '../../../domain/constants/roles';
 
 const DEFAULT_JOB_CATEGORIES = [
   { id: 1, name: 'Công nghệ thông tin / Phần mềm', icon: 'fa-laptop-code', count: '1.500+ việc làm' },
@@ -83,12 +89,17 @@ export default function CandidateHeader() {
     };
   }, []);
 
+  // Notification context
+  const { unreadCount: bellUnreadCount } = useNotification();
+
   // Chat context state & controls
   const {
     conversations,
     openChat,
     unreadTotal,
     markAllAsRead,
+    enableNotifications,
+    notificationPermission,
   } = useChat();
 
   const [isChatDropdownOpen, setIsChatDropdownOpen] = useState(false);
@@ -100,14 +111,13 @@ export default function CandidateHeader() {
     const loadUser = () => {
       // 1. Kiểm tra cookie trước: Nếu web không có cookie xác thực, chắc chắn ở trạng thái khách!
       if (!hasAuthCookie()) {
-        localStorage.removeItem('kiemjob_user');
-        localStorage.removeItem('kiemjob_token');
+        localStorage.removeItem(USER);
         setCurrentUser(null);
         return;
       }
 
       // 2. Nếu có cookie, lấy thông tin tài khoản từ localStorage
-      const stored = localStorage.getItem('kiemjob_user');
+      const stored = localStorage.getItem(USER);
       if (stored) {
         try {
           setCurrentUser(JSON.parse(stored));
@@ -150,13 +160,16 @@ export default function CandidateHeader() {
 
   const handleQuickSearch = (e) => {
     e.preventDefault();
-    if (quickKeyword.trim()) {
-      navigate(`/jobs?q=${encodeURIComponent(quickKeyword.trim())}`);
+    const trimmed = quickKeyword.trim();
+    if (trimmed) {
+      recommendationApi.saveSearchKeyword(trimmed);
+      navigate(`/jobs?q=${encodeURIComponent(trimmed)}`);
       setQuickKeyword('');
     } else {
       navigate('/jobs');
     }
   };
+
 
   // Job categories for the dropdown (aligned with categoriesData in HomePage)
   useEffect(() => {
@@ -415,28 +428,22 @@ export default function CandidateHeader() {
                       ? 'bg-[#005c55] text-white shadow-md'
                       : 'text-[#3e4947] hover:bg-[#eaedff] hover:text-[#005c55]'
                   }`}
-                  title="Thông báo"
+                  title="Thông báo hệ thống"
                   type="button"
                 >
                   <span className="material-symbols-outlined text-[22px]">notifications</span>
+                  {bellUnreadCount > 0 && (
+                    <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center border-2 border-white shadow-xs">
+                      {bellUnreadCount > 99 ? '99+' : bellUnreadCount}
+                    </span>
+                  )}
                 </button>
 
                 {isNotificationDropdownOpen && (
-                  <div className="absolute right-0 mt-2 w-72 sm:w-80 bg-white rounded-2xl shadow-xl border border-[#dae2fd] p-4 z-50 animate-in fade-in zoom-in-95 duration-150">
-                    <div className="flex items-center justify-between pb-3 border-b border-[#f2f3ff]">
-                      <h3 className="font-bold text-[#131b2e] text-[14px]">Thông báo</h3>
-                      <span className="text-[11px] text-[#6e7977] font-medium">Hệ thống</span>
-                    </div>
-                    <div className="py-6 text-center">
-                      <div className="w-12 h-12 mx-auto rounded-full bg-[#f2f3ff] flex items-center justify-center text-[#6e7977] mb-2.5">
-                        <span className="material-symbols-outlined text-[24px]">notifications_none</span>
-                      </div>
-                      <p className="text-[13px] font-semibold text-[#131b2e]">Chưa có thông báo mới</p>
-                      <p className="text-[11px] text-[#6e7977] mt-1 max-w-[220px] mx-auto leading-relaxed">
-                        Các cập nhật về trạng thái ứng tuyển và tin tuyển dụng sẽ xuất hiện tại đây.
-                      </p>
-                    </div>
-                  </div>
+                  <NotificationDropdown
+                    onClose={() => setIsNotificationDropdownOpen(false)}
+                    userRole="candidate"
+                  />
                 )}
               </div>
             </>
@@ -491,6 +498,33 @@ export default function CandidateHeader() {
                         </span>
                       </div>
                       <div className="flex items-center gap-1">
+                        {/* Nút bật/tắt thông báo desktop */}
+                        <button
+                          type="button"
+                          onClick={enableNotifications}
+                          className={`p-1.5 rounded-lg flex items-center justify-center transition-colors cursor-pointer ${
+                            notificationPermission === 'granted'
+                              ? 'text-emerald-600 hover:bg-emerald-50'
+                              : notificationPermission === 'denied'
+                              ? 'text-red-500 hover:bg-red-50'
+                              : 'text-amber-600 hover:bg-amber-50 animate-pulse'
+                          }`}
+                          title={
+                            notificationPermission === 'granted'
+                              ? 'Thông báo màn hình đang bật'
+                              : notificationPermission === 'denied'
+                              ? 'Thông báo bị chặn trong cài đặt trình duyệt'
+                              : 'Bấm để bật thông báo tin nhắn trên màn hình'
+                          }
+                        >
+                          <span className="material-symbols-outlined text-[18px]">
+                            {notificationPermission === 'granted'
+                              ? 'notifications_active'
+                              : notificationPermission === 'denied'
+                              ? 'notifications_off'
+                              : 'notifications'}
+                          </span>
+                        </button>
                         {unreadTotal > 0 && (
                           <button
                             type="button"
@@ -694,9 +728,6 @@ export default function CandidateHeader() {
                   <span className="text-xs font-bold text-[#131b2e] leading-tight truncate max-w-[110px]">
                     {currentUser.fullName || currentUser.fullname || currentUser.company_name || (currentUser.email ? currentUser.email.split('@')[0] : 'Tài khoản')}
                   </span>
-                  <span className="text-[11px] font-semibold text-[#005c55] leading-tight">
-                    {currentUser.role === 'recruiter' ? 'Nhà tuyển dụng' : (currentUser.title || 'Ứng viên')}
-                  </span>
                 </div>
                 <span className="material-symbols-outlined text-[18px] text-[#6e7977]">
                   expand_more
@@ -735,7 +766,7 @@ export default function CandidateHeader() {
                 />
                 <div className="absolute right-0 mt-2 w-72 sm:w-80 bg-white rounded-2xl shadow-xl border border-[#eaedff] py-2 z-50">
                   {currentUser ? (
-                    currentUser.role === 'recruiter' ? (
+                    currentUser.role === ROLES.RECRUITER ? (
                       /* KHI Ở TRẠNG THÁI RECRUITER: CHỈ HIỂN THỊ TRANG QUẢN LÝ VÀ ĐĂNG XUẤT */
                       <>
                         <div className="px-4 py-3 border-b border-[#eaedff]">
@@ -811,14 +842,6 @@ export default function CandidateHeader() {
                           >
                             <span className="material-symbols-outlined text-[18px] text-[#005c55]">folder_shared</span>
                             Danh sách CV của tôi
-                          </Link>
-                          <Link
-                            to="/cvs"
-                            onClick={() => setIsUserDropdownOpen(false)}
-                            className="flex items-center gap-2.5 px-4 py-2 text-sm text-[#131b2e] hover:bg-[#f2f3ff] transition-colors"
-                          >
-                            <span className="material-symbols-outlined text-[18px] text-[#005c55]">upload_file</span>
-                            Tải lên CV (PDF)
                           </Link>
                         </div>
 
@@ -992,7 +1015,7 @@ export default function CandidateHeader() {
 
           <div className="pt-2 border-t border-[#eaedff] space-y-2">
             {currentUser ? (
-              currentUser.role === 'recruiter' ? (
+              currentUser.role === ROLES.RECRUITER ? (
                 <>
                   <div className="p-3 bg-[#e6f7f5] rounded-xl border border-[#80d5cb]/50">
                     <p className="text-xs font-bold text-[#005c55] truncate">

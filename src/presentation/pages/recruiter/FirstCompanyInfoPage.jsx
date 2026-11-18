@@ -1,7 +1,9 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { saveRecruiterProfile, addCompanyAddress, addCompanyLicense, getProvinces, logout } from '../../../infrastructure/api';
 import { uploadFile } from '../../../infrastructure/api/fileApi';
+import { USER } from '../../../config/storageKeys';
+import { ROLES } from '../../../domain/constants/roles';
 
 /**
  * Trang Hoàn Tất Hồ Sơ Doanh Nghiệp Ban Đầu (FirstCompanyInfoPage.jsx)
@@ -54,7 +56,7 @@ export default function FirstCompanyInfoPage() {
   // Tải thông tin người dùng từ localStorage & danh mục Tỉnh/Thành phố
   useEffect(() => {
     try {
-      const stored = localStorage.getItem('kiemjob_user');
+      const stored = localStorage.getItem(USER);
       if (stored) {
         const parsed = JSON.parse(stored);
         setCurrentUser(parsed);
@@ -323,10 +325,10 @@ export default function FirstCompanyInfoPage() {
         addressDetail: addressDetail.trim(),
         profileCompleted: true,
         verifiedBadge: false, // Chờ duyệt
-        role: 'recruiter',
+        role: ROLES.RECRUITER,
       };
 
-      localStorage.setItem('kiemjob_user', JSON.stringify(updatedUser));
+      localStorage.setItem(USER, JSON.stringify(updatedUser));
       window.dispatchEvent(new Event('authChange'));
 
       setSuccess(true);

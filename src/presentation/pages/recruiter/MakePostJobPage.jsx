@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { WORK_MODES } from '../../../domain/constants';
+import { USER } from '../../../config/storageKeys';
 import {
   createJobPost,
   updateJobPost,
@@ -19,7 +20,10 @@ import {
   getJobAddresses,
   syncJobAddresses,
   checkJobModeration,
+  jobPostingOrderApi,
 } from '../../../infrastructure/api';
+import { ROLES } from '../../../domain/constants/roles';
+import RichTextEditor from '../../components/editor/RichTextEditor';
 
 /**
  * MakePostJobPage - Trang Đăng Tin & Chỉnh Sửa Tin Tuyển Dụng
@@ -44,6 +48,15 @@ export default function MakePostJobPage() {
     application_deadline: '',
     status: 'open', // 'draft' | 'open'
   });
+
+  // Loại tin đăng (FREE / PAID) & Hạn mức Quota
+  const [postingType, setPostingType] = useState('FREE');
+  const [durationDays, setDurationDays] = useState(30);
+  const [quota, setQuota] = useState(null);
+  const [loadingQuota, setLoadingQuota] = useState(false);
+
+  // Ngày hiện tại định dạng YYYY-MM-DD dùng để validate hạn chót
+  const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
 
   // Địa chỉ làm việc (bảng job_address)
   const [jobAddresses, setJobAddresses] = useState([
@@ -72,19 +85,19 @@ export default function MakePostJobPage() {
       id: undefined,
       title: 'Mô tả công việc (Job Description)',
       content:
-        '- Tham gia phát triển và duy trì hệ thống ứng dụng web hiệu năng cao phục vụ người dùng lớn.\n- Phối hợp cùng Product Manager, UI/UX Designer và Backend Engineer để phát triển tính năng mới.\n- Tối ưu hóa hiệu năng ứng dụng, bảo đảm tính sẵn sàng và tốc độ tải trang.',
+        '<ul><li>Tham gia phát triển và duy trì hệ thống ứng dụng web hiệu năng cao phục vụ người dùng lớn.</li><li>Phối hợp cùng Product Manager, UI/UX Designer và Backend Engineer để phát triển tính năng mới.</li><li>Tối ưu hóa hiệu năng ứng dụng, bảo đảm tính sẵn sàng và tốc độ tải trang.</li></ul>',
     },
     {
       id: undefined,
       title: 'Yêu cầu ứng viên (Requirements)',
       content:
-        '- Nắm vững kiến thức chuyên môn, ngôn ngữ lập trình và các framework liên quan.\n- Có hiểu biết về kiến trúc hệ thống hiện đại, RESTful API và cơ sở dữ liệu.\n- Tư duy giải quyết vấn đề tốt, trách nhiệm cao và khả năng làm việc nhóm.',
+        '<ul><li>Nắm vững kiến thức chuyên môn, ngôn ngữ lập trình và các framework liên quan.</li><li>Có hiểu biết về kiến trúc hệ thống hiện đại, RESTful API và cơ sở dữ liệu.</li><li>Tư duy giải quyết vấn đề tốt, trách nhiệm cao và khả năng làm việc nhóm.</li></ul>',
     },
     {
       id: undefined,
       title: 'Quyền lợi được hưởng (Benefits & Perks)',
       content:
-        '- Lương thưởng cạnh tranh, xét duyệt tăng lương định kỳ.\n- Thưởng tháng 13 + thưởng hiệu quả công việc.\n- Đầy đủ chế độ bảo hiểm theo quy định pháp luật và gói bảo hiểm sức khỏe bổ sung.\n- Môi trường làm việc năng động, lộ trình phát triển rõ ràng.',
+        '<ul><li>Lương thưởng cạnh tranh, xét duyệt tăng lương định kỳ.</li><li>Thưởng tháng 13 + thưởng hiệu quả công việc.</li><li>Đầy đủ chế độ bảo hiểm theo quy định pháp luật và gói bảo hiểm sức khỏe bổ sung.</li><li>Môi trường làm việc năng động, lộ trình phát triển rõ ràng.</li></ul>',
     },
   ]);
 
@@ -145,6 +158,32 @@ export default function MakePostJobPage() {
       active = false;
     };
   }, []);
+
+  // 1.1 Tải hạn mức đăng tin (Quota) của công ty
+  useEffect(() => {
+    let active = true;
+    const loadQuota = async () => {
+      setLoadingQuota(true);
+      try {
+        const res = await jobPostingOrderApi.getCompanyQuota();
+        const data = res?.data ?? res;
+        if (active) {
+          setQuota(data);
+          if (!isEditing && data?.remainingFreeJobs === 0) {
+            setPostingType('PAID');
+          }
+        }
+      } catch (err) {
+        console.warn('Không thể tải quota tin đăng:', err);
+      } finally {
+        if (active) setLoadingQuota(false);
+      }
+    };
+    loadQuota();
+    return () => {
+      active = false;
+    };
+  }, [isEditing]);
 
   // 2. Tải danh sách tỉnh / thành phố từ Backend API (GET /api/provinces)
   useEffect(() => {
@@ -305,6 +344,8 @@ export default function MakePostJobPage() {
         const addressesList = Array.isArray(addressesData) ? addressesData : [];
 
         if (job) {
+          setPostingType(job.postingType || 'FREE');
+          setDurationDays(job.durationDays || 30);
           setFormData({
             title: job.title || '',
             category_id: job.categoryId || '',
@@ -573,11 +614,18 @@ export default function MakePostJobPage() {
       return;
     }
 
+    if (formData.application_deadline && formData.application_deadline < todayStr) {
+      setFormError(`Hạn chót nộp hồ sơ (${formData.application_deadline}) không được ở trong quá khứ hoặc trước ngày hôm nay (${todayStr}).`);
+      showToast('Hạn chót nộp hồ sơ không được ở trước hôm nay.');
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
       // Chuẩn bị payload khớp chuẩn DTO backend JobPostRequest
-      // Khi đăng tin hoặc lưu nháp, tin tuyển dụng luôn ở trạng thái 'draft' (chờ admin duyệt)
+      // submitForReview: true khi gửi duyệt, false khi chỉ lưu nháp
+      const submitForReview = submitStatus === 'open';
       const jobPayload = {
         title: formData.title.trim(),
         categoryId: Number(formData.category_id),
@@ -588,16 +636,19 @@ export default function MakePostJobPage() {
         salaryMin: minSalary,
         salaryMax: maxSalary,
         status: 'draft',
+        postingType: postingType,
+        durationDays: postingType === 'PAID' ? durationDays : null,
+        submitForReview: submitForReview,
         addresses: validAddresses,
       };
 
       const currentUserRole = typeof window !== 'undefined'
-        ? JSON.parse(localStorage.getItem('kiemjob_user') || '{}')?.role
+        ? JSON.parse(localStorage.getItem(USER) || '{}')?.role
         : null;
 
       // Chỉ gửi companyId và postedById khi là quản trị viên (Admin).
       // Với Recruiter, backend tự động trích xuất từ phiên đăng nhập HttpOnly cookie.
-      if (currentUserRole === 'admin') {
+      if (currentUserRole === ROLES.ADMIN) {
         if (recruiterInfo?.companyId) {
           jobPayload.companyId = Number(recruiterInfo.companyId);
         }
@@ -801,6 +852,165 @@ export default function MakePostJobPage() {
 
       {/* Form chính */}
       <form onSubmit={(e) => e.preventDefault()} className="space-y-4 text-xs sm:text-sm">
+        {/* PHẦN: LỰA CHỌN GÓI ĐĂNG TIN & HẠN MỨC QUOTA */}
+        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-5 bg-[#005c55] rounded-full" />
+              <h2 className="text-sm font-bold text-slate-900">
+                Gói đăng tin & Hạn mức tuyển dụng
+              </h2>
+            </div>
+
+            {quota && (
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                <span>
+                  Hạn mức miễn phí: <strong>{quota.usedFreeJobs}/3 tin</strong> (Còn {quota.remainingFreeJobs} tin)
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* Cards lựa chọn gói */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+            {/* Gói FREE */}
+            <div
+              onClick={() => {
+                if (quota?.remainingFreeJobs > 0 || isEditing || postingType === 'FREE') {
+                  setPostingType('FREE');
+                }
+              }}
+              className={`p-4 rounded-xl border-2 transition-all cursor-pointer relative ${
+                postingType === 'FREE'
+                  ? 'border-[#005c55] bg-emerald-50/40 shadow-xs'
+                  : (quota?.remainingFreeJobs === 0 && !isEditing)
+                  ? 'border-slate-200 bg-slate-50 opacity-60 cursor-not-allowed'
+                  : 'border-slate-200 hover:border-slate-300 bg-white'
+              }`}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-center gap-2.5">
+                  <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                    postingType === 'FREE' ? 'border-[#005c55]' : 'border-slate-400'
+                  }`}>
+                    {postingType === 'FREE' && <div className="w-2.5 h-2.5 bg-[#005c55] rounded-full" />}
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-slate-900 text-sm">Đăng tin Miễn phí (FREE)</h3>
+                    <p className="text-xs text-slate-500 mt-0.5">Dành cho doanh nghiệp tuyển dụng cơ bản</p>
+                  </div>
+                </div>
+                <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[11px] font-bold">
+                  0 VNĐ
+                </span>
+              </div>
+
+              <div className="mt-3 pt-3 border-t border-slate-100 text-xs text-slate-600 space-y-1">
+                <div className="flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-[16px] text-emerald-600">check</span>
+                  <span>Tối đa <strong>3 tin tuyển dụng</strong> đang hoạt động cùng lúc</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-[16px] text-emerald-600">check</span>
+                  <span>Đóng tin sẽ giải phóng ngay hạn mức để đăng tin khác</span>
+                </div>
+                {quota?.remainingFreeJobs === 0 && !isEditing && (
+                  <p className="text-red-600 font-semibold pt-1">
+                    * Công ty đã sử dụng hết 3 tin miễn phí. Vui lòng chọn gói Trả phí bên cạnh.
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Gói PAID */}
+            <div
+              onClick={() => setPostingType('PAID')}
+              className={`p-4 rounded-xl border-2 transition-all cursor-pointer relative ${
+                postingType === 'PAID'
+                  ? 'border-blue-600 bg-blue-50/40 shadow-xs'
+                  : 'border-slate-200 hover:border-slate-300 bg-white'
+              }`}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-center gap-2.5">
+                  <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                    postingType === 'PAID' ? 'border-blue-600' : 'border-slate-400'
+                  }`}>
+                    {postingType === 'PAID' && <div className="w-2.5 h-2.5 bg-blue-600 rounded-full" />}
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-slate-900 text-sm">Đăng tin Trả phí (PAID)</h3>
+                    <p className="text-xs text-slate-500 mt-0.5">Không giới hạn số lượng tin, chủ động thời hạn</p>
+                  </div>
+                </div>
+                <span className="px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-800 text-[11px] font-bold">
+                  1.000đ / ngày
+                </span>
+              </div>
+
+              <div className="mt-3 pt-3 border-t border-slate-100 text-xs text-slate-600 space-y-1">
+                <div className="flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-[16px] text-blue-600">check</span>
+                  <span>Tùy chọn thời hạn hiển thị từ <strong>3 đến 90 ngày</strong></span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-[16px] text-blue-600">check</span>
+                  <span>Admin duyệt trước, thanh toán VNPay sau để kích hoạt</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Cấu hình số ngày và tạm tính chi phí khi chọn PAID */}
+          {postingType === 'PAID' && (
+            <div className="p-4 rounded-xl bg-blue-50/60 border border-blue-200 space-y-3 animate-fade-in">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <label className="font-bold text-slate-800 text-xs sm:text-sm">
+                  Chọn số ngày hiển thị tin tuyển dụng (3 - 90 ngày):
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min="3"
+                    max="90"
+                    value={durationDays}
+                    onChange={(e) => setDurationDays(Math.max(3, Math.min(90, parseInt(e.target.value) || 3)))}
+                    className="w-20 px-3 py-1.5 text-center text-sm font-bold bg-white border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <span className="text-xs font-semibold text-slate-600">ngày</span>
+                  <div className="flex gap-1 ml-2">
+                    {[7, 15, 30, 60].map((d) => (
+                      <button
+                        key={d}
+                        type="button"
+                        onClick={() => setDurationDays(d)}
+                        className={`px-2 py-1 text-[11px] font-semibold rounded border transition-colors ${
+                          durationDays === d
+                            ? 'bg-blue-600 text-white border-blue-600'
+                            : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        {d}n
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-blue-200/80 flex items-center justify-between text-xs sm:text-sm">
+                <span className="text-slate-600">Tạm tính phí đăng tin:</span>
+                <span className="font-extrabold text-blue-700 text-base">
+                  {(durationDays * 1000).toLocaleString('vi-VN')} VNĐ
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-500 italic">
+                * Quý khách chưa cần thanh toán ngay bây giờ. Đơn hàng sẽ được tạo sau khi Quản trị viên phê duyệt nội dung tin.
+              </p>
+            </div>
+          )}
+        </div>
+
         {/* PHẦN 1: THÔNG TIN CHUNG BÀI ĐĂNG (Bảng: job_posts) */}
         <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs space-y-4">
           <div className="flex items-center gap-2 border-b border-slate-100 pb-2.5">
@@ -1074,18 +1284,49 @@ export default function MakePostJobPage() {
 
             {/* Hạn chót nộp hồ sơ */}
             <div>
-              <label className="font-bold text-[#131b2e] block mb-1.5">
-                Hạn chót nộp hồ sơ <span className="text-[#ba1a1a]">*</span>
-              </label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="font-bold text-[#131b2e] block">
+                  Hạn chót nộp hồ sơ <span className="text-[#ba1a1a]">*</span>
+                </label>
+                {postingType === 'PAID' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const d = new Date();
+                      d.setDate(d.getDate() + durationDays);
+                      setFormData((prev) => ({ ...prev, application_deadline: d.toISOString().split('T')[0] }));
+                    }}
+                    className="text-[11px] font-semibold text-blue-600 hover:text-blue-800 underline transition-colors"
+                  >
+                    Gợi ý theo gói trả phí (+{durationDays} ngày)
+                  </button>
+                )}
+              </div>
               <input
                 type="date"
                 required
+                min={todayStr}
+                autoComplete="off"
                 value={formData.application_deadline}
                 onChange={(e) =>
                   setFormData({ ...formData, application_deadline: e.target.value })
                 }
-                className="w-full p-3.5 bg-[#f2f3ff] rounded-2xl outline-none border border-transparent focus:border-[#005c55] focus:bg-white font-semibold text-xs cursor-pointer transition-colors"
+                className={`w-full p-3.5 rounded-2xl outline-none font-semibold text-xs cursor-pointer transition-colors ${
+                  formData.application_deadline && formData.application_deadline < todayStr
+                    ? 'bg-amber-50 border-2 border-amber-400 text-amber-900 focus:bg-white'
+                    : 'bg-[#f2f3ff] border border-transparent focus:border-[#005c55] focus:bg-white'
+                }`}
               />
+              {formData.application_deadline && formData.application_deadline < todayStr && (
+                <div className="flex items-center gap-1.5 text-xs text-amber-800 bg-amber-50 border border-amber-300 rounded-xl px-3 py-2 mt-2 font-medium animate-fade-in">
+                  <span className="material-symbols-outlined text-[18px] text-amber-600 shrink-0">
+                    warning
+                  </span>
+                  <span>
+                    <strong>Cảnh báo thời gian:</strong> Ngày đã chọn (<code>{formData.application_deadline}</code>) ở trước ngày hôm nay (<code>{todayStr}</code>). Vui lòng chọn ngày từ hôm nay trở đi để tin không bị ẩn khỏi trang chủ và danh sách việc làm!
+                  </span>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -1299,13 +1540,10 @@ export default function MakePostJobPage() {
                   )}
                 </div>
 
-                <textarea
-                  rows={4}
-                  required
-                  value={detail.content}
-                  onChange={(e) => updateJobDetailItem(idx, 'content', e.target.value)}
-                  placeholder="Nhập nội dung chi tiết cho mục này. Xuống dòng cho từng gạch đầu dòng..."
-                  className="w-full p-3.5 bg-white rounded-xl border border-[#eaedff] outline-none focus:border-[#005c55] text-xs leading-relaxed text-[#3e4947] transition-colors"
+                <RichTextEditor
+                  content={detail.content}
+                  onChange={(html) => updateJobDetailItem(idx, 'content', html)}
+                  placeholder="Nhập nội dung chi tiết cho mục này. Sử dụng thanh công cụ để định dạng, chèn danh sách, màu sắc, liên kết hoặc bảng..."
                 />
               </div>
             ))}

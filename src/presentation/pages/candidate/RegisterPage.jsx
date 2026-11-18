@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { registerCandidate, verifyEmail, resendOtp } from '../../../infrastructure/api';
+import { registerCandidate, verifyEmail, resendOtp, loginWithGoogle } from '../../../infrastructure/api';
+import { triggerGoogleLogin } from '../../../infrastructure/utils/googleAuth';
 import { setCookie } from '../../../infrastructure/utils/cookieUtils';
+import { USER } from '../../../config/storageKeys';
+import { ROLES } from '../../../domain/constants/roles';
 
 /**
  * Trang Đăng Ký Tài Khoản Ứng Viên (RegisterPage.jsx)
@@ -147,6 +150,52 @@ export default function RegisterPage() {
   };
 
   /**
+   * Đăng ký nhanh với Google: Bỏ qua bước nhập mật khẩu và mã OTP
+   */
+  const handleGoogleRegister = () => {
+    setErrorMessage('');
+    triggerGoogleLogin({
+      role: 'candidate',
+      onSuccess: async (payload) => {
+        setSubmitting(true);
+        try {
+          const data = await loginWithGoogle(payload);
+          const account = data.account || data || {};
+
+          let user = {
+            id: account.id,
+            email: account.email || '',
+            phone: account.phone || '',
+            role: account.role || ROLES.CANDIDATE,
+            fullName: account.fullName || account.fullname || (account.email ? account.email.split('@')[0] : 'Ứng viên'),
+            fullname: account.fullName || account.fullname || (account.email ? account.email.split('@')[0] : 'Ứng viên'),
+            title: account.headline || '',
+            avatar: account.avatarUrl || ''
+          };
+
+          setCookie('logged_in', 'true', 14);
+          localStorage.setItem(USER, JSON.stringify(user));
+          window.dispatchEvent(new Event('authChange'));
+
+          if (account.role === ROLES.ADMIN) {
+            navigate('/admin');
+            return;
+          }
+
+          navigate('/');
+        } catch (err) {
+          setErrorMessage(err.message || 'Đăng ký nhanh với Google thất bại. Vui lòng thử lại!');
+        } finally {
+          setSubmitting(false);
+        }
+      },
+      onError: (err) => {
+        setErrorMessage(err.message || 'Không thể mở cửa sổ đăng ký Google.');
+      }
+    });
+  };
+
+  /**
    * BƯỚC 2: Xác thực mã OTP và hoàn tất đăng nhập
    */
   const handleVerifyOtp = async (e) => {
@@ -168,9 +217,8 @@ export default function RegisterPage() {
       const accountData = await verifyEmail(cleanEmail, cleanOtp);
 
       // Kiểm tra vai trò tài khoản: Cổng này chỉ dành cho Ứng viên!
-      if (accountData?.role === 'recruiter') {
-        localStorage.removeItem('kiemjob_user');
-        localStorage.removeItem('kiemjob_token');
+      if (accountData?.role === ROLES.RECRUITER) {
+        localStorage.removeItem(USER);
         throw new Error('Email này thuộc tài khoản Nhà tuyển dụng. Vui lòng chuyển sang cổng dành cho Nhà tuyển dụng.');
       }
 
@@ -181,7 +229,7 @@ export default function RegisterPage() {
       const user = {
         id: accountData?.id || Date.now(),
         email: cleanEmail,
-        role: 'candidate',
+        role: ROLES.CANDIDATE,
         fullName: defaultFullName,
         title: null,
         avatar: null,
@@ -196,8 +244,7 @@ export default function RegisterPage() {
       };
 
       setCookie('logged_in', 'true', 7);
-      localStorage.setItem('kiemjob_user', JSON.stringify(user));
-      localStorage.removeItem('kiemjob_token');
+      localStorage.setItem(USER, JSON.stringify(user));
 
       window.dispatchEvent(new Event('authChange'));
 
@@ -378,7 +425,32 @@ export default function RegisterPage() {
             {/* BƯỚC 1: FORM ĐIỀN THÔNG TIN ĐĂNG KÝ (TINH GỌN, KHÔNG CHỨA NÚT/Ô OTP)    */}
             {/* ========================================================================= */}
             {step === 1 && (
-              <form onSubmit={handleRegister} className="space-y-4">
+              <div className="space-y-4">
+                {/* Đăng ký nhanh bằng Google */}
+                <button
+                  type="button"
+                  onClick={handleGoogleRegister}
+                  disabled={submitting}
+                  className="w-full flex items-center justify-center gap-2.5 px-4 py-2.5 rounded-2xl bg-[#f2f3ff] hover:bg-[#eaedff] text-[#131b2e] text-xs font-bold transition-all border border-[#eaedff] cursor-pointer disabled:opacity-60 disabled:cursor-wait shadow-sm"
+                >
+                  <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
+                    <path d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.17z" fill="#4285F4" />
+                    <path d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.33 24 12 24z" fill="#34A853" />
+                    <path d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 9.99 0 12s.45 3.82 1.25 5.42l4.03-3.15z" fill="#FBBC05" />
+                    <path d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z" fill="#EA4335" />
+                  </svg>
+                  <span>{submitting ? 'Đang xác thực...' : 'Đăng ký nhanh với Google'}</span>
+                </button>
+
+                {/* Divider */}
+                <div className="relative flex items-center justify-center py-1">
+                  <div className="w-full h-px bg-[#eaedff]" />
+                  <span className="absolute bg-white px-3 text-[11px] font-semibold text-[#6e7977]">
+                    hoặc đăng ký bằng Email
+                  </span>
+                </div>
+
+                <form onSubmit={handleRegister} className="space-y-4">
                 {/* 1. Gmail */}
                 <div>
                   <label className="text-xs font-bold text-[#131b2e] block mb-1.5">
@@ -514,9 +586,10 @@ export default function RegisterPage() {
                   )}
                 </button>
               </form>
-            )}
+            </div>
+          )}
 
-            {/* ========================================================================= */}
+          {/* ========================================================================= */}
             {/* BƯỚC 2: MÀN HÌNH NHẬN MÃ OTP (XUẤT HIỆN SAU KHI ĐĂNG KÝ XONG)              */}
             {/* ========================================================================= */}
             {step === 2 && (

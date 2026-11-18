@@ -5,6 +5,10 @@ import jobCategoryApi from '../../../infrastructure/api/jobCategoryApi';
 import companyApi from '../../../infrastructure/api/companyApi';
 import provinceApi from '../../../infrastructure/api/provinceApi';
 import savedJobApi from '../../../infrastructure/api/savedJobApi';
+import recommendationApi from '../../../infrastructure/api/recommendationApi';
+import SearchSuggestionDropdown from '../../components/common/SearchSuggestionDropdown';
+import { getLocalSearchHistory, saveLocalSearchKeyword } from '../../../infrastructure/utils/searchHistoryUtils';
+
 
 // Icon mapping helper theo tên ngành nghề
 const getCategoryIcon = (name = '') => {
@@ -133,7 +137,10 @@ const normalizeJob = (item) => {
     isFeatured: Boolean(item.isFeatured ?? item.is_featured),
     workingMode: item.workingMode || 'Toàn thời gian',
     deadline: item.applicationDeadline || null,
+    matchScore: item.matchScore != null ? item.matchScore : null,
+    matchReasons: Array.isArray(item.matchReasons) ? item.matchReasons : [],
   };
+
 };
 
 export default function HomePage() {
@@ -150,15 +157,10 @@ export default function HomePage() {
   const [categorySearch, setCategorySearch] = useState('');
   const [locationSearch, setLocationSearch] = useState('');
 
-  // Search History
-  const [searchHistory, setSearchHistory] = useState(() => {
-    try {
-      const saved = localStorage.getItem('kiemjob_search_history');
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
+  // Search History (Tối đa 5 lịch sử, tự động xóa quá 1 tuần)
+  const [searchHistory, setSearchHistory] = useState(() =>
+    getLocalSearchHistory().map((item) => item.keyword)
+  );
   const [showSearchHistory, setShowSearchHistory] = useState(false);
 
   // VIP Hero Banner active index
@@ -168,8 +170,12 @@ export default function HomePage() {
   const [categories, setCategories] = useState([]);
   const [allJobs, setAllJobs] = useState([]);
   const [featuredJobsList, setFeaturedJobsList] = useState([]);
+  const [recommendedJobs, setRecommendedJobs] = useState([]);
+  const [loadingRecommended, setLoadingRecommended] = useState(true);
+  const [showSearchDropdown, setShowSearchDropdown] = useState(false);
   const [companies, setCompanies] = useState([]);
   const [provinces, setProvinces] = useState([]);
+
   const [savedJobIds, setSavedJobIds] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -197,14 +203,16 @@ export default function HomePage() {
     const loadData = async () => {
       setLoading(true);
       try {
-        const [catsRes, jobsRes, featuredRes, compsRes, provsRes] =
+        const [catsRes, jobsRes, featuredRes, compsRes, provsRes, recRes] =
           await Promise.allSettled([
             jobCategoryApi.getCategories(),
             jobPostApi.getJobPosts({ status: 'open', size: 50 }),
             jobPostApi.getFeaturedJobs ? jobPostApi.getFeaturedJobs() : Promise.resolve([]),
             companyApi.getApprovedCompanies(0, 16),
             provinceApi.getProvinces(),
+            recommendationApi.getRecommendedJobs({ page: 0, size: 6 }),
           ]);
+
 
         if (!isMounted) return;
 
@@ -267,11 +275,28 @@ export default function HomePage() {
               : [];
           setProvinces(provList);
         }
+
+        // Recommended jobs
+        if (recRes && recRes.status === 'fulfilled') {
+          const rData = recRes.value;
+          const rawRec = Array.isArray(rData)
+            ? rData
+            : Array.isArray(rData?.content)
+              ? rData.content
+              : Array.isArray(rData?.data)
+                ? rData.data
+                : [];
+          setRecommendedJobs(rawRec.map(normalizeJob));
+        }
       } catch (err) {
         console.error('Lỗi tải dữ liệu trang chủ:', err);
       } finally {
-        if (isMounted) setLoading(false);
+        if (isMounted) {
+          setLoading(false);
+          setLoadingRecommended(false);
+        }
       }
+
     };
 
     loadData();
@@ -309,12 +334,11 @@ export default function HomePage() {
     if (e) e.preventDefault();
     const trimmed = keyword.trim();
     if (trimmed) {
-      const newHistory = [trimmed, ...searchHistory.filter((h) => h !== trimmed)].slice(0, 10);
-      setSearchHistory(newHistory);
-      try {
-        localStorage.setItem('kiemjob_search_history', JSON.stringify(newHistory));
-      } catch { /* ignore */ }
+      recommendationApi.saveSearchKeyword(trimmed);
+      const updatedList = saveLocalSearchKeyword(trimmed);
+      setSearchHistory(updatedList.map((item) => item.keyword));
     }
+    setShowSearchDropdown(false);
     setShowCategoryDropdown(false);
     setShowLocationDropdown(false);
     setShowSearchHistory(false);
@@ -430,16 +454,6 @@ export default function HomePage() {
       badge: 'Văn hóa công ty',
       title: 'Đội ngũ năng động & bứt phá thành công',
     },
-    {
-      img: 'https://lh3.googleusercontent.com/aida/AEtjO1XiTgUlRS7WcFnndplkgMBHKHnzwWYBJr3mBM9wZMJPqM0o4m7m1St8K8fWxIDhf3BRCFcocq_My9M4YSqBhwuzI7gGN0Qm9Dte_K2pVV2rS5UzNVZT32qOffkvUp6pHfJXhwhjL8PWSnR6IV2rP9Dys5iQIafmqc5Ng1dIZNvKSFUw6WOoqKOuwlBEXXy--XR9KcnrX7Dy3oohovN0q5CXKGQUuca6Ho1sLbWk-1qQLjJ3TBOLJmwySkYG',
-      badge: 'Môi trường làm việc',
-      title: 'Không gian sáng tạo truyền cảm hứng',
-    },
-    {
-      img: 'https://lh3.googleusercontent.com/aida/AEtjO1XQX-8P_dpHPeWVLCy6_6vAv99j2p9wjWNPHoXdwGwZ5dm85E3kyWOa1WXQp5pEzIySeRxfP4b-GuWpdbtZtUGRKCAWSUpWZ8-hL8TT0cEV9ZbT4Ew3whNjUKEa5bEIKQUQckk3COzpXFxySpe_KTO-rJ1rVNfGRmlKFAD2aXBGI5Y3IC9aZ7lO4zLyqErlxJNmcMeSZCFL3jF3zZJ3FKd2shO_lj3k9RqJhlVPj9P2cCd6pfRGfzaSRUEV',
-      badge: 'Phát triển sự nghiệp',
-      title: 'Lộ trình thăng tiến và đãi ngộ vượt trội',
-    },
   ];
 
   const [activeHeroSlide, setActiveHeroSlide] = useState(0);
@@ -456,13 +470,16 @@ export default function HomePage() {
       {/* ========================================================= */}
       {/* 1. HERO SECTION (Chuẩn giao diện giaodien/home.html)       */}
       {/* ========================================================= */}
-      <section className="relative overflow-hidden bg-gradient-to-b from-[#f0fdfa] via-white to-[#faf8ff] text-[#131b2e] pt-10 pb-20 lg:pt-14 lg:pb-24 border-b border-emerald-100">
-        <div className="pointer-events-none absolute -top-24 -left-20 w-[36rem] h-[36rem] rounded-full bg-emerald-500/10 blur-3xl" />
-        <div className="pointer-events-none absolute top-1/3 -right-20 w-[38rem] h-[38rem] rounded-full bg-[#97f5cc]/40 blur-3xl" />
-        <div className="pointer-events-none absolute bottom-0 left-1/2 -translate-x-1/2 w-[42rem] h-[18rem] rounded-full bg-teal-400/10 blur-3xl" />
-        <div className="pointer-events-none absolute inset-0 opacity-[0.04] bg-[radial-gradient(#6ee7b7_1px,transparent_1px)] [background-size:24px_24px]" />
+      <section className="relative bg-gradient-to-b from-[#f0fdfa] via-white to-[#faf8ff] text-[#131b2e] pt-10 pb-20 lg:pt-14 lg:pb-24 border-b border-emerald-100 z-30">
+        {/* Khối decor bo viền cô lập overflow-hidden để không cắt ngang dropdown */}
+        <div className="pointer-events-none absolute inset-0 overflow-hidden">
+          <div className="absolute -top-24 -left-20 w-[36rem] h-[36rem] rounded-full bg-emerald-500/10 blur-3xl" />
+          <div className="absolute top-1/3 -right-20 w-[38rem] h-[38rem] rounded-full bg-[#97f5cc]/40 blur-3xl" />
+          <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[42rem] h-[18rem] rounded-full bg-teal-400/10 blur-3xl" />
+          <div className="absolute inset-0 opacity-[0.04] bg-[radial-gradient(#6ee7b7_1px,transparent_1px)] [background-size:24px_24px]" />
+        </div>
 
-        <div className="max-w-7xl mx-auto px-6 lg:px-12 relative z-10">
+        <div className="max-w-7xl mx-auto px-6 lg:px-12 relative z-20">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-8 items-center">
             {/* Left Column: Headline, Description, Quick Search, Rating */}
             <div className="lg:col-span-6 flex flex-col items-start">
@@ -492,14 +509,19 @@ export default function HomePage() {
               </div>
 
               {/* Search Form Box */}
-              <div className="w-full max-w-xl bg-white rounded-2xl p-2.5 shadow-xl border border-emerald-100 text-[#131b2e] mb-8">
+              <div className="w-full max-w-xl bg-white rounded-2xl p-2.5 shadow-xl border border-emerald-100 text-[#131b2e] mb-8 relative z-50">
                 <form onSubmit={handleSearch} className="flex flex-col sm:flex-row items-center gap-2">
+
                   <div className="flex-1 w-full flex items-center gap-2 px-3 py-2.5 rounded-xl bg-[#f2f3ff] focus-within:bg-white focus-within:ring-2 focus-within:ring-[#005c55] transition-all">
                     <span className="material-symbols-outlined text-[#005c55] text-[20px] shrink-0">search</span>
                     <input
                       type="text"
                       value={keyword}
-                      onChange={(e) => setKeyword(e.target.value)}
+                      onFocus={() => setShowSearchDropdown(true)}
+                      onChange={(e) => {
+                        setKeyword(e.target.value);
+                        setShowSearchDropdown(true);
+                      }}
                       placeholder="Vị trí, kỹ năng, chức danh..."
                       className="w-full bg-transparent border-0 outline-none text-[#131b2e] placeholder:text-[#6e7977] text-sm"
                     />
@@ -529,7 +551,26 @@ export default function HomePage() {
                     <span className="material-symbols-outlined text-[18px]">arrow_forward</span>
                   </button>
                 </form>
+
+                <SearchSuggestionDropdown
+                  isOpen={showSearchDropdown}
+                  onClose={() => setShowSearchDropdown(false)}
+                  query={keyword}
+                  onSelect={(selected) => {
+                    setKeyword(selected);
+                    setShowSearchDropdown(false);
+                    recommendationApi.saveSearchKeyword(selected);
+                    saveLocalSearchKeyword(selected);
+                    const params = new URLSearchParams();
+                    params.append('q', selected);
+                    if (selectedLocation && selectedLocation !== 'all') {
+                      params.append('location', selectedLocation);
+                    }
+                    navigate(`/jobs?${params.toString()}`);
+                  }}
+                />
               </div>
+
             </div>
 
             {/* Right Column: Hero Showcase Slider & Floating Glass Badges */}
@@ -541,9 +582,8 @@ export default function HomePage() {
                     {heroSlides.map((slide, idx) => (
                       <div
                         key={idx}
-                        className={`hero-slide absolute inset-0 transition-opacity duration-500 ${
-                          activeHeroSlide === idx ? 'opacity-100 z-10' : 'opacity-0 pointer-events-none'
-                        }`}
+                        className={`hero-slide absolute inset-0 transition-opacity duration-500 ${activeHeroSlide === idx ? 'opacity-100 z-10' : 'opacity-0 pointer-events-none'
+                          }`}
                       >
                         <img
                           alt={slide.title}
@@ -597,11 +637,10 @@ export default function HomePage() {
                       type="button"
                       aria-label={`Slide ${i + 1}`}
                       onClick={() => setActiveHeroSlide(i)}
-                      className={`hero-dot transition-all cursor-pointer ${
-                        activeHeroSlide === i
+                      className={`hero-dot transition-all cursor-pointer ${activeHeroSlide === i
                           ? 'w-6 h-2 rounded-full bg-emerald-600'
                           : 'w-2 h-2 rounded-full bg-slate-300 hover:bg-slate-400'
-                      }`}
+                        }`}
                     />
                   ))}
                 </div>
@@ -611,12 +650,158 @@ export default function HomePage() {
         </div>
       </section>
 
+      <div className='flex justify-center p-6'>
+        <img src='https://hanaminikata.com/image/757235976086093915/1308bf1caa4ba2b5.webp'>
+        </img>
+      </div>
+
       {/* ========================================================= */}
-      {/* 2. VIỆC LÀM NỔI BẬT & VIỆC LÀM HẤP DẪN                     */}
+      {/* 2. VIỆC LÀM GỢI Ý & VIỆC LÀM NỔI BẬT                      */}
       {/* ========================================================= */}
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-12">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-12 relative z-10">
+        {/* --- 2.0 VIỆC LÀM DÀNH RIÊNG CHO BẠN (#recommended-jobs-section) --- */}
+
+        {recommendedJobs.length > 0 && (
+          <section id="recommended-jobs-section" className="scroll-mt-6">
+            <div className="bg-gradient-to-br from-emerald-50/50 via-white to-teal-50/30 rounded-3xl border border-emerald-100 p-6 sm:p-8 shadow-sm">
+              {/* Box Header */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-emerald-100/60">
+                <div className="flex items-center gap-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-xl sm:text-2xl font-extrabold text-[#131b2e] tracking-tight">
+                        Việc Làm Dành Riêng Cho Bạn
+                      </h2>
+                      <span className="hidden sm:inline-flex items-center gap-1 bg-[#005c55] text-white text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
+                        AI Match
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Gợi ý tự động dựa trên CV và hành vi quan tâm của bạn
+                    </p>
+                  </div>
+                </div>
+
+                <Link
+                  to="/jobs"
+                  className="text-sm font-bold text-[#005c55] hover:text-[#008060] flex items-center gap-1 hover:underline"
+                >
+                  Xem tất cả việc làm
+                  <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+                </Link>
+              </div>
+
+              {/* Grid 3 Columns */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pt-5">
+                {recommendedJobs.map((job) => {
+                  const isSaved = savedJobIds.includes(String(job.id));
+                  return (
+                    <div
+                      key={job.id}
+                      className="group bg-white rounded-2xl border border-emerald-100/80 hover:border-[#005c55] hover:shadow-xl transition-all duration-300 p-4 flex flex-col justify-between relative"
+                    >
+                      {/* Top Part: Logo & Info */}
+                      <div>
+                        <div className="flex items-start gap-3">
+                          <Link
+                            to={`/jobs/${job.id}`}
+                            onClick={() => {
+                              recommendationApi.recordInteraction({ jobId: job.id, actionType: 'SEARCH_CLICK' });
+                            }}
+                            className="w-13 h-13 rounded-xl border border-gray-100 p-1 flex items-center justify-center shrink-0 bg-white group-hover:scale-105 transition-transform overflow-hidden shadow-xs"
+                          >
+                            {job.companyLogo ? (
+                              <img
+                                src={job.companyLogo}
+                                alt={job.companyName}
+                                className="w-full h-full object-contain"
+                                onError={(e) => {
+                                  e.target.onerror = null;
+                                  e.target.src = 'https://via.placeholder.com/60?text=Job';
+                                }}
+                              />
+                            ) : (
+                              <div className="w-full h-full bg-emerald-50 text-[#005c55] flex items-center justify-center font-bold text-base rounded-lg">
+                                {job.companyName?.charAt(0) || 'K'}
+                              </div>
+                            )}
+                          </Link>
+
+                          <div className="flex-1 min-w-0">
+                            {/* Badges line: Match Score badge */}
+                            <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                              {job.matchScore != null && (
+                                <span className="bg-emerald-50 text-[#005c55] text-[10px] font-extrabold px-2 py-0.5 rounded-full flex items-center gap-1 border border-emerald-200">
+                                  <span className="material-symbols-outlined text-[12px]">verified</span>
+                                  {job.matchScore}% Phù hợp
+                                </span>
+                              )}
+                              {job.isFeatured && (
+                                <span className="bg-amber-50 text-amber-700 text-[10px] font-semibold px-1.5 py-0.5 rounded">
+                                  Nổi bật
+                                </span>
+                              )}
+                            </div>
+
+                            <Link
+                              to={`/jobs/${job.id}`}
+                              onClick={() => {
+                                recommendationApi.recordInteraction({ jobId: job.id, actionType: 'SEARCH_CLICK' });
+                              }}
+                              className="font-bold text-sm text-[#131b2e] group-hover:text-[#005c55] line-clamp-1 leading-snug transition-colors"
+                              title={job.title}
+                            >
+                              {job.title}
+                            </Link>
+
+                            <Link
+                              to={`/companies/${job.companyId}`}
+                              className="text-xs text-gray-500 hover:text-[#005c55] line-clamp-1 mt-0.5"
+                              title={job.companyName}
+                            >
+                              {job.companyName}
+                            </Link>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Bottom Part: Salary, Location & Save Button */}
+                      <div className="flex items-center justify-between pt-3 mt-3 border-t border-gray-100 text-xs">
+                        <div className="flex items-center gap-2 truncate">
+                          <span className="font-bold text-[#005c55] bg-emerald-50 px-2 py-0.5 rounded text-[11px]">
+                            {job.salary}
+                          </span>
+                          <span className="text-gray-500 bg-gray-100 px-2 py-0.5 rounded text-[11px] truncate">
+                            {job.location}
+                          </span>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            toggleSave(job.id);
+                          }}
+                          className={`p-1.5 rounded-lg border transition-colors ${isSaved
+                              ? 'border-emerald-600 bg-emerald-50 text-emerald-600'
+                              : 'border-gray-200 text-gray-400 hover:text-emerald-600 hover:border-emerald-200 hover:bg-emerald-50/30'
+                            }`}
+                          title={isSaved ? 'Bỏ lưu tin' : 'Lưu tin tuyển dụng'}
+                        >
+                          <i className={`fa-${isSaved ? 'solid' : 'regular'} fa-bookmark text-xs`}></i>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </section>
+        )}
+
         {/* --- 2.1 VIỆC LÀM NỔI BẬT (#box-feature-jobs) --- */}
         <section id="list-feature-jobs" className="scroll-mt-6">
+
           <div className="bg-white rounded-2xl border border-[#eaedff] p-5 sm:p-6 shadow-sm">
             {/* Box Header */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-gray-100">
@@ -679,8 +864,8 @@ export default function HomePage() {
                     setFeaturedPage(1);
                   }}
                   className={`px-3 py-1 rounded-full text-xs font-medium transition ${featuredSmartLocation === loc.id
-                      ? 'bg-[#005c55] text-white font-bold shadow-sm'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    ? 'bg-[#005c55] text-white font-bold shadow-sm'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                     }`}
                 >
                   {loc.label}
@@ -789,8 +974,8 @@ export default function HomePage() {
                             toggleSave(job.id);
                           }}
                           className={`w-7 h-7 rounded-full flex items-center justify-center transition shrink-0 ${isSaved
-                              ? 'text-red-500 bg-red-50 hover:bg-red-100'
-                              : 'text-gray-400 hover:text-red-500 hover:bg-gray-100'
+                            ? 'text-red-500 bg-red-50 hover:bg-red-100'
+                            : 'text-gray-400 hover:text-red-500 hover:bg-gray-100'
                             }`}
                           title={isSaved ? 'Đã lưu việc làm' : 'Lưu tin tuyển dụng'}
                         >
@@ -858,9 +1043,9 @@ export default function HomePage() {
                       setAttractivePage(1);
                     }}
                     className={`px-3 py-1 rounded-full text-xs font-medium transition ${(attractiveSmartLocation === 'all' && city === 'Tất cả') ||
-                        attractiveSmartLocation === city
-                        ? 'bg-[#005c55] text-white font-bold'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      attractiveSmartLocation === city
+                      ? 'bg-[#005c55] text-white font-bold'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                       }`}
                   >
                     {city}

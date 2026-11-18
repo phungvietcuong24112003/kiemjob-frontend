@@ -2,6 +2,7 @@ import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 import tailwindcss from '@tailwindcss/vite'
 
+const devApiTarget = process.env.VITE_DEV_API_TARGET || 'http://localhost:8080'
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -13,11 +14,11 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-        target: 'http://localhost:8080',
+        target: devApiTarget,
         changeOrigin: true,
       },
       '/ws': {
-        target: 'http://localhost:8080',
+        target: devApiTarget,
         ws: true,
         changeOrigin: true,
       },

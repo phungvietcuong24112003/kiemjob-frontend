@@ -1,5 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
+import { SUPPORT_EMAIL } from '../../../config/site';
 
 export default function CandidateFooter() {
   return (
@@ -23,7 +24,7 @@ export default function CandidateFooter() {
             </div>
             <div className="flex items-center gap-2.5 text-sm text-[#131b2e] font-medium">
               <span className="material-symbols-outlined text-[#005c55] text-[20px]">mail</span>
-              <span>hotro@kiemjob.vn</span>
+              <span>{SUPPORT_EMAIL}</span>
             </div>
           </div>
 

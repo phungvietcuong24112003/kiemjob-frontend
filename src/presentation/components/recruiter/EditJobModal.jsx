@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import jobPostApi from '../../../infrastructure/api/jobPostApi';
 import { provinceApi } from '../../../infrastructure/api/provinceApi';
 import { getCompanyAddresses } from '../../../infrastructure/api/companyApi';
+import RichTextEditor from '../editor/RichTextEditor';
 
 /**
  * EditJobModal - Modal chỉnh sửa tin tuyển dụng & các mục chi tiết
@@ -18,6 +19,8 @@ export default function EditJobModal({
   const [activeTab, setActiveTab] = useState(initialTab); // 'general' | 'addresses' | 'details'
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+
+  const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
 
   // Form Fields
   const [formData, setFormData] = useState({
@@ -235,6 +238,12 @@ export default function EditJobModal({
     }
     if (min !== null && max !== null && min > max) {
       setErrorMessage('Lương tối thiểu không được lớn hơn lương tối đa.');
+      setActiveTab('general');
+      return;
+    }
+
+    if (formData.applicationDeadline && formData.applicationDeadline < todayStr) {
+      setErrorMessage(`Hạn chót nộp hồ sơ (${formData.applicationDeadline}) không được ở trong quá khứ hoặc trước ngày hôm nay (${todayStr}).`);
       setActiveTab('general');
       return;
     }
@@ -524,10 +533,26 @@ export default function EditJobModal({
                   <input
                     type="date"
                     name="applicationDeadline"
+                    min={todayStr}
+                    autoComplete="off"
                     value={formData.applicationDeadline}
                     onChange={handleChange}
-                    className="w-full h-10 px-3 rounded-xl bg-[#f2f3ff] text-xs font-semibold text-[#131b2e] border border-transparent focus:border-[#005c55] focus:bg-white outline-none transition-colors cursor-pointer"
+                    className={`w-full h-10 px-3 rounded-xl text-xs font-semibold outline-none transition-colors cursor-pointer ${
+                      formData.applicationDeadline && formData.applicationDeadline < todayStr
+                        ? 'bg-amber-50 border-2 border-amber-400 text-amber-900 focus:bg-white'
+                        : 'bg-[#f2f3ff] text-[#131b2e] border border-transparent focus:border-[#005c55] focus:bg-white'
+                    }`}
                   />
+                  {formData.applicationDeadline && formData.applicationDeadline < todayStr && (
+                    <div className="flex items-center gap-1 text-[11px] text-amber-800 bg-amber-50 border border-amber-300 rounded-lg px-2.5 py-1.5 mt-1.5 font-medium animate-fade-in">
+                      <span className="material-symbols-outlined text-[15px] text-amber-600 shrink-0">
+                        warning
+                      </span>
+                      <span>
+                        <strong>Cảnh báo:</strong> Thời gian ({formData.applicationDeadline}) ở trước hôm nay ({todayStr}).
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -715,12 +740,10 @@ export default function EditJobModal({
                     </button>
                   </div>
 
-                  <textarea
-                    rows={4}
-                    value={item.content}
-                    onChange={(e) => handleDetailChange(idx, 'content', e.target.value)}
-                    placeholder="Nội dung chi tiết (xuống dòng cho từng ý hoặc gạch đầu dòng)..."
-                    className="w-full text-xs text-[#3e4947] bg-white p-3 rounded-lg border border-[#eaedff] outline-none focus:border-[#005c55] leading-relaxed resize-y"
+                  <RichTextEditor
+                    content={item.content}
+                    onChange={(html) => handleDetailChange(idx, 'content', html)}
+                    placeholder="Nội dung chi tiết (sử dụng thanh công cụ để định dạng, chèn danh sách, bảng, liên kết)..."
                   />
                 </div>
               ))}

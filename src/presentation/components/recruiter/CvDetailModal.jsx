@@ -12,7 +12,7 @@ import {
   getCandidateLinksById,
 } from '../../../infrastructure/api/profileApi';
 import { createInterview } from '../../../infrastructure/api/interviewApi';
-import { updateApplicationStatus } from '../../../infrastructure/api/appicationApi';
+import { updateApplicationStatus } from '../../../infrastructure/api/applicationApi';
 
 const unwrap = (response) => {
   let value = response?.data ?? response;
